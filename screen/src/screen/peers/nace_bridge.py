@@ -22,6 +22,7 @@ from ..config import RAW_DIR
 DEFAULT_BRIDGE_CANDIDATES = (
     RAW_DIR / "statbel" / "conversion_2008_2025.csv",
     RAW_DIR / "statbel" / "conversion_2008_2025.parquet",
+    RAW_DIR / "statbel" / "conversion_2008_2025.xlsx",
 )
 
 
@@ -69,6 +70,8 @@ def load_bridge(path: str | Path | None = None) -> NaceBridge | None:
 
     if found.suffix == ".parquet":
         df = pl.read_parquet(found)
+    elif found.suffix in (".xlsx", ".xls"):
+        df = pl.read_excel(found, infer_schema_length=0)
     else:
         df = pl.read_csv(found, infer_schema=False)
     col_2008, col_2025 = _find_columns(df.columns)

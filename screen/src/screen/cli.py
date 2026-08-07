@@ -30,13 +30,17 @@ def _thesis() -> config.Thesis:
 
 @app.command()
 def ingest(
-    source: str = typer.Argument("all", help="kbo | statbel | nbb | all"),
+    source: str = typer.Argument("all", help="kbo | statbel | nbb | taxonomy | all"),
     no_full: bool = typer.Option(False, help="KBO: sla de Full-zip over (alleen updates)"),
     fixtures: Path = typer.Option(
         None, help="NBB: map met voorbeeldneerleggingen (zolang er geen CBSO-key is)"
     ),
     statbel_url: list[str] = typer.Option(
         None, help="Statbel: extra/vervangende download in de vorm naam=url"
+    ),
+    local: Path = typer.Option(
+        None, help="taxonomy: lokaal NBB-bestand (modellen-Excel of taxonomie-"
+                   "export) om rubrics.csv uit op te bouwen"
     ),
 ):
     """Download en versioneer ruwe bronbestanden (idempotent, met manifest)."""
@@ -70,6 +74,25 @@ def ingest(
                 "download desnoods handmatig en registreer via --statbel-url of "
                 "register_local)", fg="yellow",
             )
+
+    if source == "taxonomy":
+        from .ingest import taxonomy_import
+
+        if not local:
+            typer.secho(
+                "Geef het gedownloade NBB-bestand mee: screen ingest taxonomy "
+                "--local ~/Downloads/'Jaarrekening NL 2025.xlsx' (zie docs/SOURCES.md)",
+                fg="red",
+            )
+            raise typer.Exit(1)
+        try:
+            path, count = taxonomy_import.import_taxonomy(local)
+        except taxonomy_import.TaxonomyImportError as exc:
+            typer.secho(str(exc), fg="red")
+            raise typer.Exit(1)
+        typer.echo(f"  → {path}: {count} rubriekcodes")
+        typer.echo("  Draai nu 'python -m pytest screen/tests -q' — de poortwachter-test "
+                   "valideert de gebruikte codes tegen deze lijst.")
 
     if source in ("nbb", "all"):
         from .ingest import nbb_cbso

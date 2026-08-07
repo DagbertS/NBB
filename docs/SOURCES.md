@@ -35,7 +35,10 @@ eerste run buiten de bouw-omgeving — die blokkeert *.fgov.be/*.nbb.be).
 | Wat | Officiële XBRL-taxonomie en modellen van de jaarrekening (volledig/verkort/micro) met rubriekcodes — de bron van waarheid voor elke rubriekcode |
 | Overzichtspagina | `https://www.nbb.be/en/central-balance-sheet-office/preparation-and-filing/technical-information-and-taxonomy-3` (gevonden 2026-08-07) |
 | Protocoldocumentatie | o.a. `https://www.nbb.be/doc/ba/xbrl/taxo/protocole/ba_protocolexbrl_v12_nl.pdf` en jaarversies onder `nbb.be/doc/ba/xbrl/...` |
-| Status | **unverified** (egress geblokkeerd). Werkwijze: download van de officiële site een machineleesbare rubriekenlijst (CSV/Excel-export van de taxonomie), registreer die als `data/raw/nbb/taxonomy/rubrics.csv`. De pipeline valideert elke rubriekcode ertegen; codes uit de projectspecificatie (§5) worden pas vertrouwd nadat de test tegen dit bestand geslaagd is (`tests/test_taxonomy.py::test_seed_codes_in_official_taxonomy`, skipt met waarschuwing zolang het bestand ontbreekt). |
+| Modellen als Excel | Pagina "Modellen vennootschappen": bestanden zoals **"Jaarrekening NL 2025.xlsx"** — `https://www.nbb.be/en/central-balance-sheet-office/preparation-and-filing/what-file/models/models-companies-0` (gevonden 2026-08-07) |
+| Taxonomie-download | `https://www.nbb.be/en/central-balance-sheet-office/drawing-and-filing/technical-information-and-taxonomy/taxonomy` — actuele versie Nbb-cbso-26.0.8 (sinds 02-01-2026) |
+| Import | `screen ingest taxonomy --local <gedownload bestand>` scant alle cellen/werkbladen op rubriekcode-patronen en bouwt `data/raw/nbb/taxonomy/rubrics.csv`. Daarna valideert de poortwachter-test (`tests/test_taxonomy.py::test_seed_codes_in_official_taxonomy`) de codes uit de projectspecificatie (§5) automatisch; hij skipt met waarschuwing zolang het bestand ontbreekt. |
+| Status | URL's **unverified** vanuit de bouwomgeving (egress geblokkeerd); download gebeurt in de browser van de gebruiker. |
 
 ## Statbel — NACE-BEL 2025
 
