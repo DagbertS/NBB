@@ -62,6 +62,62 @@ def start_kbo_import(
     return RedirectResponse("/", status_code=303)
 
 
+def _kbo_import_from_url_bg(url: str) -> None:
+    """Achtergrondtaak: Full-zip van een door de gebruiker opgegeven URL halen."""
+    import zipfile
+
+    import httpx
+
+    from ..services.kbo_import import import_full_zip
+    from ..services.kbo_update import DOWNLOAD_DIR
+
+    try:
+        DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        target = DOWNLOAD_DIR / "manual_full.zip"
+        tmp = target.with_suffix(".part")
+        _set_import_status("bezig: zip downloaden van opgegeven URL ...")
+        with httpx.Client(follow_redirects=True, timeout=None) as client:
+            with client.stream("GET", url) as resp:
+                resp.raise_for_status()
+                done = 0
+                with open(tmp, "wb") as f:
+                    for chunk in resp.iter_bytes():
+                        f.write(chunk)
+                        done += len(chunk)
+                        if done % (200 * 1024 * 1024) < len(chunk):
+                            _set_import_status(
+                                f"bezig: downloaden ... {done // (1024 * 1024)} MB"
+                            )
+        tmp.rename(target)
+        if not zipfile.is_zipfile(target):
+            _set_import_status(
+                "fout: het gedownloade bestand is geen zip — gebruik een directe "
+                "downloadlink (bij Dropbox: eindig de link op ?dl=1)"
+            )
+            target.unlink()
+            return
+        _set_import_status("bezig: importeren van de zip ...")
+        import_full_zip(target, progress=lambda msg: _set_import_status(f"bezig: {str(msg).strip()}"))
+        _set_import_status("klaar: handmatige Full-zip geïmporteerd")
+    except Exception as exc:
+        _set_import_status(f"fout: {exc}")
+
+
+@router.post("/kbo-import-url")
+def start_kbo_import_from_url(
+    background_tasks: BackgroundTasks,
+    url: str = Form(...),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    url = url.strip()
+    if not url.lower().startswith(("http://", "https://")):
+        raise HTTPException(400, "Geef een volledige http(s)-link op")
+    background_tasks.add_task(_kbo_import_from_url_bg, url)
+    log_action(db, user.id, "kbo_import_url_started", url)
+    return RedirectResponse("/", status_code=303)
+
+
 @router.get("/users")
 def users_page(
     request: Request,

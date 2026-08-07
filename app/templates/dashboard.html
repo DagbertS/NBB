@@ -33,6 +33,13 @@
             onsubmit="return confirm('KBO Full-zip downloaden en importeren? Dit duurt 30-60 minuten en draait op de achtergrond.')">
         <button class="btn-small btn-secondary">Download &amp; importeer KBO-data</button>
       </form>
+      <form method="post" action="/admin/kbo-import-url"
+            style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap"
+            onsubmit="return confirm('Zip van deze link downloaden en importeren?')">
+        <input type="text" name="url" placeholder="of plak een directe downloadlink naar de Full-zip (bv. Dropbox …?dl=1)"
+               required style="flex:1; min-width:260px">
+        <button class="btn-small">Importeer via link</button>
+      </form>
       {% endif %}
     </li>
     <li>Laatste KBO-update: {{ last_update or "—" }} <span class="muted">(dagelijks automatisch gecontroleerd, 05:30)</span></li>
