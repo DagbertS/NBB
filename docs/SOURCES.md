@@ -28,6 +28,15 @@ eerste run buiten de bouw-omgeving — die blokkeert *.fgov.be/*.nbb.be).
 | Status | **unverified** — geen subscription key beschikbaar; fase 1–2 draaien tegen fixtures (afspraak 2026-08-07) |
 | Technische gids | `https://www.nbb.be/doc/ba/cbso2022/cbso_webservices_technical guide_0.94.pdf` (gevonden 2026-08-07) |
 
+## NBB — taxonomie en rubriekcodes (fase 2)
+
+| | |
+|---|---|
+| Wat | Officiële XBRL-taxonomie en modellen van de jaarrekening (volledig/verkort/micro) met rubriekcodes — de bron van waarheid voor elke rubriekcode |
+| Overzichtspagina | `https://www.nbb.be/en/central-balance-sheet-office/preparation-and-filing/technical-information-and-taxonomy-3` (gevonden 2026-08-07) |
+| Protocoldocumentatie | o.a. `https://www.nbb.be/doc/ba/xbrl/taxo/protocole/ba_protocolexbrl_v12_nl.pdf` en jaarversies onder `nbb.be/doc/ba/xbrl/...` |
+| Status | **unverified** (egress geblokkeerd). Werkwijze: download van de officiële site een machineleesbare rubriekenlijst (CSV/Excel-export van de taxonomie), registreer die als `data/raw/nbb/taxonomy/rubrics.csv`. De pipeline valideert elke rubriekcode ertegen; codes uit de projectspecificatie (§5) worden pas vertrouwd nadat de test tegen dit bestand geslaagd is (`tests/test_taxonomy.py::test_seed_codes_in_official_taxonomy`, skipt met waarschuwing zolang het bestand ontbreekt). |
+
 ## Statbel — NACE-BEL 2025
 
 | | |

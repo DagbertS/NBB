@@ -1,0 +1,42 @@
+{
+ "ReferenceNumber": "2024-1-000001",
+ "EnterpriseNumber": "0123.456.789",
+ "DepositDate": "2024-07-10",
+ "ModelType": "m01-f",
+ "ExerciseDates": {
+  "StartDate": "2023-01-01",
+  "EndDate": "2023-12-31"
+ },
+ "Rubrics": [
+  {
+   "Code": "10/15",
+   "Period": "N",
+   "Value": "500000.00"
+  },
+  {
+   "Code": "20/58",
+   "Period": "N",
+   "Value": "1200000.00"
+  },
+  {
+   "Code": "70",
+   "Period": "N",
+   "Value": "2500000.00"
+  },
+  {
+   "Code": "9901",
+   "Period": "N",
+   "Value": "180000.00"
+  },
+  {
+   "Code": "630",
+   "Period": "N",
+   "Value": "90000.00"
+  },
+  {
+   "Code": "10/15",
+   "Period": "NM1",
+   "Value": "450000.00"
+  }
+ ]
+}

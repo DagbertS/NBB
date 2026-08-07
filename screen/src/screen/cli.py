@@ -85,13 +85,35 @@ def ingest(
 
 
 @app.command()
-def build():
-    """Parse + normalize + peer-set + benchmark + signals (fase 2-5)."""
+def build(
+    strict_taxonomy: bool = typer.Option(
+        False, help="Faal hard als een rubriekcode niet in de officiële taxonomie zit"
+    ),
+):
+    """Parse raw -> tidy (fase 2): KBO-parquets + facts.parquet.
+
+    Normalize/peer-set/benchmark/signals volgen in fase 3-5.
+    """
+    config.ensure_data_dirs()
+    from . import build as build_mod
+
+    typer.echo("KBO -> parquet:")
+    build_mod.build_kbo(progress=typer.echo)
+
+    typer.echo("NBB-neerleggingen -> facts.parquet:")
+    result = build_mod.build_facts(strict_taxonomy=strict_taxonomy, progress=typer.echo)
+    if result.skipped:
+        typer.secho(
+            f"  {len(result.skipped)} neerlegging(en) overgeslagen (run liep door):",
+            fg="yellow",
+        )
+        for name, reason in result.skipped:
+            typer.echo(f"    - {name}: {reason}")
+
     typer.secho(
-        "Nog niet beschikbaar: 'build' wordt gebouwd in fase 2-5 (zie docs/PLAN.md). "
-        "Eerst akkoord op fase 2 (parse).", fg="yellow",
+        "Klaar t/m parse. Normalize (metrics) volgt in fase 3 — zie docs/PLAN.md.",
+        fg="green",
     )
-    raise typer.Exit(1)
 
 
 @app.command()

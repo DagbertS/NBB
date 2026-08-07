@@ -1,0 +1,22 @@
+{
+ "ReferenceNumber": "2024-2-000002",
+ "EnterpriseNumber": "0987654321",
+ "DepositDate": "2024-08-01",
+ "ModelType": "m02-a",
+ "ExerciseDates": {
+  "StartDate": "2023-01-01",
+  "EndDate": "2023-12-31"
+ },
+ "Rubrics": [
+  {
+   "Code": "9900",
+   "Period": "N",
+   "Value": "350000.00"
+  },
+  {
+   "Code": "62",
+   "Period": "N",
+   "Value": "200000.00"
+  }
+ ]
+}

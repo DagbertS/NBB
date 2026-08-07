@@ -1,0 +1,22 @@
+{
+ "ReferenceNumber": "2024-1-000099",
+ "EnterpriseNumber": "0123.456.789",
+ "DepositDate": "2024-09-02",
+ "ModelType": "m01-f",
+ "ExerciseDates": {
+  "StartDate": "2023-01-01",
+  "EndDate": "2023-12-31"
+ },
+ "Rubrics": [
+  {
+   "Code": "10/15",
+   "Period": "N",
+   "Value": "510000.00"
+  },
+  {
+   "Code": "20/58",
+   "Period": "N",
+   "Value": "1210000.00"
+  }
+ ]
+}
