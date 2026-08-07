@@ -59,9 +59,19 @@ eigen peer set. Bron nog niet opgezocht — **todo fase 4**.
 ## Belgisch Staatsblad (ejustice)
 
 Publicaties rechtspersonen (bestuurders, kapitaal, fusie, ontbinding).
-**Nog niet geverifieerd**: vóór er ook maar iets gebouwd wordt, checken we
-robots.txt en gebruiksvoorwaarden (todo fase 5). Tot dan alleen de
-handmatige-invoerinterface.
+
+**Besluit: geen automatisering.** robots.txt van ejustice.just.fgov.be
+(door gebruiker opgehaald en gecontroleerd op 2026-08-07) zet alle
+relevante paden voor rechtspersonen-publicaties op `Disallow` voor alle
+user-agents, o.a. `/cgi_tsv/`, `/cgi_tsv_pub/`, `/tsv_pub/`, `/tsv_pdf/`.
+De gebruiksvoorwaarden verklaren de *informatie* rechtenvrij en vrij
+herbruikbaar (ook commercieel; bronvermelding aangeraden) — dat betreft
+hergebruik van inhoud, niet geautomatiseerde afname. Conform spec §7
+(robots.txt respecteren) blijft `signals/staatsblad.py` dus een bewuste
+stub en loopt Staatsblad-input via de handmatige interface
+(`manual_signals.yaml`, elk signaal met `source` + `as_of`): opzoeken in
+de browser, bevinding met datum en bron invoeren. Wie bulk wil, vraagt
+FOD Justitie expliciet om toestemming of een officieel kanaal.
 
 ## Commerciële bronnen (Companyweb, Graydon/Creditsafe, Bel-first/Orbis)
 
