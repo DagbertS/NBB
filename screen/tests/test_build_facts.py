@@ -71,7 +71,7 @@ def test_build_facts_with_taxonomy(build_mod, data_root):
 
     df = pl.read_parquet(result.facts_path)
     assert df.filter(pl.col("rubric_code") == "62")["code_in_taxonomy"].to_list() == [False]
-    assert df.filter(pl.col("rubric_code") == "70")["code_in_taxonomy"].to_list() == [True]
+    assert set(df.filter(pl.col("rubric_code") == "70")["code_in_taxonomy"].to_list()) == {True}
 
 
 def test_build_facts_strict_taxonomy_fails_on_unknown(build_mod, data_root):

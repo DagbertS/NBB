@@ -89,13 +89,19 @@ def build(
     strict_taxonomy: bool = typer.Option(
         False, help="Faal hard als een rubriekcode niet in de officiële taxonomie zit"
     ),
+    revenue_ratio: float = typer.Option(
+        None,
+        help="Expliciete omzet/brutomarge-ratio voor de omzetproxy bij verkort/"
+             "micro-schema (bewuste aanname; zonder deze optie wordt NIET geschat)",
+    ),
 ):
-    """Parse raw -> tidy (fase 2): KBO-parquets + facts.parquet.
+    """Parse + normalize (fase 2-3): KBO-parquets, facts.parquet, metrics.parquet.
 
-    Normalize/peer-set/benchmark/signals volgen in fase 3-5.
+    Peer-set/benchmark/signals volgen in fase 4-5.
     """
     config.ensure_data_dirs()
     from . import build as build_mod
+    from .normalize import build_metrics as norm
 
     typer.echo("KBO -> parquet:")
     build_mod.build_kbo(progress=typer.echo)
@@ -110,8 +116,15 @@ def build(
         for name, reason in result.skipped:
             typer.echo(f"    - {name}: {reason}")
 
+    typer.echo("Normalize -> metrics.parquet:")
+    norm.build_metrics(
+        revenue_ratio=revenue_ratio,
+        revenue_ratio_note="handmatige aanname via --revenue-ratio" if revenue_ratio else "",
+        progress=typer.echo,
+    )
+
     typer.secho(
-        "Klaar t/m parse. Normalize (metrics) volgt in fase 3 — zie docs/PLAN.md.",
+        "Klaar t/m normalize. Peer-set + benchmark (fase 4) volgen — zie docs/PLAN.md.",
         fg="green",
     )
 
