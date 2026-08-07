@@ -97,12 +97,16 @@ def build(
     mva_min: float = typer.Option(
         0.0, help="Vervuilingsfilter: minimum materiële vaste activa voor peers"
     ),
+    manual_signals: Path = typer.Option(
+        None, help="YAML met handmatige/externe signalen (elk met source en as_of); "
+                   "zie screen/manual_signals.example.yaml"
+    ),
 ):
-    """Parse + normalize + peer-set + benchmark (fase 2-4).
+    """Parse + normalize + peer-set + benchmark + signals (fase 2-5).
 
     Volgorde: KBO -> facts -> universe -> peer-omzetratio -> metrics ->
-    peers -> kwartielen. Elke stap slaat netjes over als zijn input ontbreekt.
-    Signals (fase 5) en score/report (fase 6) volgen.
+    peers -> kwartielen -> signalen. Elke stap slaat netjes over als zijn
+    input ontbreekt. Score/report (fase 6) volgen.
     """
     config.ensure_data_dirs()
     from . import build as build_mod
@@ -157,8 +161,18 @@ def build(
         if peer_result.peer_count:
             bench.build_benchmark(progress=typer.echo)
 
+    typer.echo("Signalen -> signals.parquet:")
+    from .signals import build_signals as sig
+    from .signals.manual_input import ManualSignalError
+
+    try:
+        sig.build_signals(manual_path=manual_signals, progress=typer.echo)
+    except ManualSignalError as exc:
+        typer.secho(f"  handmatige signalen geweigerd: {exc}", fg="red")
+        raise typer.Exit(1)
+
     typer.secho(
-        "Klaar t/m peer-set + benchmark. Signals (fase 5) volgen — zie docs/PLAN.md.",
+        "Klaar t/m signals. Score + report (fase 6) volgen — zie docs/PLAN.md.",
         fg="green",
     )
 

@@ -30,6 +30,8 @@ FACT_SCHEMA = {
     "value": pl.Float64,
     "deposit_reference": pl.Utf8,
     "deposit_date": pl.Utf8,
+    "exercise_start": pl.Utf8,
+    "exercise_end": pl.Utf8,
     "model": pl.Utf8,
     "source": pl.Utf8,
     "as_of": pl.Utf8,

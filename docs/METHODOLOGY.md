@@ -117,7 +117,38 @@ rubrieken die eerst taxonomie-validatie nodig hebben. In `metrics.parquet`
 bestaan de kolommen al (`flag_*`) maar staan ze op `null` met een reason —
 er wordt niets "gedetecteerd" dat we niet kunnen onderbouwen.
 
+## Signalen (fase 5)
+
+Alle signalen landen in `marts/signals.parquet` met per rij:
+`enterprise_number, fiscal_year, signal, value, source, as_of, kind, note`.
+`kind` scheidt strikt: **'derived'** (afgeleid uit officiële neerleggings-
+metadata) en **'manual'** (handmatig ingevoerd, source + as_of verplicht —
+zonder die velden wordt het invoerbestand geweigerd).
+
+### Uit de neerlegging zelf (kind='derived', source='nbb-filing-metadata')
+
+| Signaal | Regel | Aanname |
+|---|---|---|
+| `late_filing` | neerleggingsdatum > afsluiting boekjaar + 7 maanden; waarde = dagen te laat | Deadline-regel (AV uiterlijk 6m na afsluiting + 30 dagen neerleggingstermijn ⇒ 7m) is een **aanname, wettelijke basis te verifiëren** |
+| `chronic_late_filing` | ≥ 2 van de laatste 3 aanwezige boekjaren te laat | sterkere distress-indicator dan de meeste ratio's (spec §7) |
+| `model_switch_full_to_abbreviated` | schema volledig → verkort/micro tussen opeenvolgende boekjaren | klassiek motief: omzet verbergen vóór verkoop |
+| `correction_filing` | er bestaan verdrongen (superseded) neerleggingen voor het boekjaar | telt aantal + referenties |
+| `irregular_fiscal_year_length` | boekjaar < 350 of > 380 dagen | boekjaarwijziging |
+| `fiscal_year_end_changed` | afsluitmaand wijkt af van het vorige boekjaar | idem |
+
+**Commissariswissel** (spec §7) is bewust nog niet geïmplementeerd: vereist
+toelichtingsrubrieken die eerst taxonomie-validatie nodig hebben. Liever
+eerlijk afwezig dan half gedetecteerd.
+
+### Staatsblad en externe signalen (kind='manual')
+
+De robots.txt/voorwaarden-check van ejustice kon vanuit de bouwomgeving
+niet uitgevoerd worden; tot die check gedaan is wordt het Staatsblad NIET
+gescrapet (interface ligt klaar in `signals/staatsblad.py`). Staatsblad-
+publicaties, vergunningen, RSZ-dagvaardingen, opvolgingssignalen e.d. gaan
+via het handmatige YAML-bestand (`--manual-signals`, voorbeeld in
+`screen/manual_signals.example.yaml`) met de publicatiereferentie als source.
+
 ## Nog niet gebouwd
 
-Peer-kwartielen (fase 4), signalen (fase 5), score en one-pagers (fase 6)
-— zie docs/PLAN.md.
+Score en one-pagers (fase 6) — zie docs/PLAN.md.

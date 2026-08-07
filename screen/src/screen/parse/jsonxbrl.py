@@ -61,7 +61,10 @@ def parse_deposit(path: str | Path) -> list[dict]:
     deposit_date = str(_get(doc, "DepositDate", default=""))[:10]
     model = str(_get(doc, "ModelType", "Model", default="unknown"))
     schema_type = classify_schema(model)
-    fiscal_year = _fiscal_year(_get(doc, "ExerciseDates", default={}), ctx)
+    exercise_dates = _get(doc, "ExerciseDates", default={})
+    fiscal_year = _fiscal_year(exercise_dates, ctx)
+    exercise_start = str(_get(exercise_dates, "StartDate", default=""))[:10]
+    exercise_end = str(_get(exercise_dates, "EndDate", default=""))[:10]
 
     rubrics = _get(doc, "Rubrics", "rubrics", default=[])
     rows: list[dict] = []
@@ -83,6 +86,8 @@ def parse_deposit(path: str | Path) -> list[dict]:
             "value": value,
             "deposit_reference": reference,
             "deposit_date": deposit_date,
+            "exercise_start": exercise_start,
+            "exercise_end": exercise_end,
             "model": model,
             "source": "nbb",
             "as_of": deposit_date,
