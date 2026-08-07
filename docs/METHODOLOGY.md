@@ -67,6 +67,47 @@ Statusregels die overal gelden:
 - VTE-evolutie en aandeel tijdelijke contracten: fase 4+ (tijdreeks resp.
   toelichtingsrubriek nog te valideren).
 
+## Peer-set en benchmark (fase 4)
+
+### Universe-selectie (KBO)
+Criteria — allemaal expliciet terug te vinden in `marts/peer_criteria.json`:
+hoofdactiviteit (`Classification == MAIN`) in de NACE-versie van de thesis,
+prefixmatch op de thesis-codes, provincie afgeleid uit postcode, status
+actief (`AC`), vervuilingsfilter op holdings (64.20) en management-
+vennootschappen (70.10). `overrides.yaml` kan bedrijven forceren
+(`include: true`, telt ook buiten de criteria), uitsluiten
+(`include: false`) of herclassificeren (`nace_override`).
+
+### NACE-conversievlag
+Per onderneming wordt de 2008-hoofdcode tegen de Statbel-conversietabel
+gehouden: had die code meerdere 2025-tegenhangers, dan is de automatisch
+toegekende 2025-code mogelijk de verkeerde tak →
+`nace_conversion_ambiguous = true`. Zonder geladen conversietabel blijft de
+vlag null (onbekend) — nooit stilzwijgend "geen probleem".
+
+### Peers en financiële filters
+`peers = universe ∩ beschikbare metrics`, met personeelskost (62) > 0 en
+materiële vaste activa (22/27) > drempel (`--mva-min`, default 0). Bedrijven
+zonder financials kunnen niet gebenchmarkt worden en vallen dus buiten de
+peer set (maar blijven in de universe zichtbaar). Streefgrootte 20-40 peers;
+daarbuiten volgt een expliciete waarschuwing in de output en in
+`peer_criteria.json`.
+
+### Peer-omzetratio (voedt de omzetproxy)
+`ratio = mediaan( 70 / (70 − 60 − 61) )` over volledig-schema-peers met
+positieve noemer — de noemer is de brutomarge-proxy (zie boven). Minimum 5
+bruikbare peers, anders geen ratio en dus geen omzetschattingen. De note
+bij elke geschatte omzet vermeldt n en IQR van de ratio. Een handmatige
+`--revenue-ratio` overschrijft de peer-mediaan en wordt als handmatige
+aanname genoteerd.
+
+### Kwartielen, nooit gemiddelden
+`marts/benchmark.parquet`: per metric × boekjaar n, Q1, mediaan, Q3
+(DuckDB `quantile_cont`), berekend op de eigen peer set. Geschatte waarden
+(source 'estimate') doen NIET mee aan de kwartielen — kwartielen op
+schattingen zouden schijnzekerheid zijn. `marts/peer_positions.parquet`
+geeft per onderneming het percentiel (percent_rank) binnen de peers.
+
 ## Owner-adjustment-vlaggen (§5) — status
 
 Management fees, huur aan patrimoniumvennootschap, bestuurdersbezoldiging

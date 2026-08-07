@@ -28,6 +28,8 @@ METRIC_BUILDERS = {
     "balance_total": lambda rub, ctx: M.reported(rub, R.BALANSTOTAAL),
     "ebit": lambda rub, ctx: M.reported(rub, R.EBIT),
     "fte": lambda rub, ctx: M.reported(rub, R.VTE_GEMIDDELD),
+    "personnel_cost": lambda rub, ctx: M.reported(rub, R.BEZOLDIGINGEN),
+    "tangible_fixed_assets": lambda rub, ctx: M.reported(rub, R.MVA),
     "ebitda_proxy": lambda rub, ctx: M.ebitda_proxy(rub),
     "net_financial_debt": lambda rub, ctx: M.net_financial_debt(rub),
     "revenue": lambda rub, ctx: M.revenue(rub, ctx.get("revenue_ratio"),

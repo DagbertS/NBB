@@ -91,17 +91,26 @@ def build(
     ),
     revenue_ratio: float = typer.Option(
         None,
-        help="Expliciete omzet/brutomarge-ratio voor de omzetproxy bij verkort/"
-             "micro-schema (bewuste aanname; zonder deze optie wordt NIET geschat)",
+        help="Expliciete omzet/brutomarge-ratio voor de omzetproxy (overschrijft "
+             "de peer-mediaan; zonder ratio én zonder peers wordt NIET geschat)",
+    ),
+    mva_min: float = typer.Option(
+        0.0, help="Vervuilingsfilter: minimum materiële vaste activa voor peers"
     ),
 ):
-    """Parse + normalize (fase 2-3): KBO-parquets, facts.parquet, metrics.parquet.
+    """Parse + normalize + peer-set + benchmark (fase 2-4).
 
-    Peer-set/benchmark/signals volgen in fase 4-5.
+    Volgorde: KBO -> facts -> universe -> peer-omzetratio -> metrics ->
+    peers -> kwartielen. Elke stap slaat netjes over als zijn input ontbreekt.
+    Signals (fase 5) en score/report (fase 6) volgen.
     """
     config.ensure_data_dirs()
     from . import build as build_mod
     from .normalize import build_metrics as norm
+    from .peers import benchmark as bench
+    from .peers import nace_bridge, peer_set
+
+    thesis = _thesis()
 
     typer.echo("KBO -> parquet:")
     build_mod.build_kbo(progress=typer.echo)
@@ -116,15 +125,40 @@ def build(
         for name, reason in result.skipped:
             typer.echo(f"    - {name}: {reason}")
 
+    typer.echo("Peer-universe (KBO-selectie op de thesis):")
+    universe = None
+    try:
+        bridge = nace_bridge.load_bridge()
+        if bridge is None:
+            typer.echo("  Statbel-conversietabel niet geladen — 1-op-veel-vlag blijft null")
+        universe = peer_set.build_universe(
+            thesis, overrides=config.load_overrides(), bridge=bridge,
+            progress=typer.echo,
+        )
+    except peer_set.PeerSetError as exc:
+        typer.secho(f"  overgeslagen: {exc}", fg="yellow")
+
+    ratio_note = ""
+    if revenue_ratio is not None:
+        ratio_note = "handmatige aanname via --revenue-ratio"
+    elif universe is not None:
+        revenue_ratio, ratio_note = peer_set.compute_revenue_ratio(universe)
+        typer.echo(f"  omzet/brutomarge-ratio: "
+                   f"{revenue_ratio if revenue_ratio else 'niet beschikbaar'} ({ratio_note})")
+
     typer.echo("Normalize -> metrics.parquet:")
-    norm.build_metrics(
-        revenue_ratio=revenue_ratio,
-        revenue_ratio_note="handmatige aanname via --revenue-ratio" if revenue_ratio else "",
-        progress=typer.echo,
-    )
+    norm.build_metrics(revenue_ratio=revenue_ratio, revenue_ratio_note=ratio_note,
+                       progress=typer.echo)
+
+    if universe is not None:
+        typer.echo("Peers + benchmark:")
+        peer_result = peer_set.build_peers(universe, thesis, mva_min=mva_min,
+                                           progress=typer.echo)
+        if peer_result.peer_count:
+            bench.build_benchmark(progress=typer.echo)
 
     typer.secho(
-        "Klaar t/m normalize. Peer-set + benchmark (fase 4) volgen — zie docs/PLAN.md.",
+        "Klaar t/m peer-set + benchmark. Signals (fase 5) volgen — zie docs/PLAN.md.",
         fg="green",
     )
 

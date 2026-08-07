@@ -38,6 +38,7 @@ SEED_CODES = {
     "50/53",   # geldbeleggingen
     "54/58",   # liquide middelen
     # Aanvullend voor normalize (fase 3) — even ongevalideerd als de rest:
+    "22/27",   # materiële vaste activa
     "60",      # handelsgoederen, grond- en hulpstoffen
     "3",       # voorraden en bestellingen in uitvoering
     "40",      # handelsvorderingen (<= 1 jaar)
