@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Gebruikersbeheer</h1>
+
+<div class="card">
+  <h2>Nieuwe gebruiker</h2>
+  <form method="post" action="/admin/users" class="search-form">
+    <div>
+      <label>E-mailadres</label>
+      <input type="email" name="email" required>
+    </div>
+    <div>
+      <label>Wachtwoord</label>
+      <input type="password" name="password" required>
+    </div>
+    <div>
+      <label>Rol</label>
+      <select name="role">
+        <option value="user">Gewone gebruiker</option>
+        <option value="admin">Beheerder</option>
+      </select>
+    </div>
+    <div><button type="submit">Aanmaken</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrap"><table>
+    <tr><th>E-mail</th><th>Rol</th><th>Status</th><th>Sinds</th><th></th></tr>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.email }}</td>
+      <td>{{ u.role }}</td>
+      <td>{% if u.is_active %}<span class="badge ok">actief</span>{% else %}<span class="badge err">inactief</span>{% endif %}</td>
+      <td>{{ u.created_at.strftime("%d-%m-%Y") }}</td>
+      <td>
+        {% if u.id != user.id %}
+        <form method="post" action="/admin/users/{{ u.id }}/toggle" style="display:inline">
+          <button class="btn-small">{% if u.is_active %}Deactiveren{% else %}Activeren{% endif %}</button>
+        </form>
+        {% endif %}
+        <form method="post" action="/admin/users/{{ u.id }}/password" style="display:inline">
+          <input type="password" name="password" placeholder="nieuw wachtwoord" required style="width:150px; display:inline-block">
+          <button class="btn-small">Reset</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endblock %}

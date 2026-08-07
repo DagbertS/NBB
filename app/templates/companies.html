@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Bedrijven zoeken</h1>
+
+{% if not kbo_loaded %}
+<div class="card">
+  <p class="error">De KBO-database is nog niet geladen. Importeer eerst de
+  KboOpenData Full-zip: <code>python scripts/import_kbo.py &lt;pad-naar-Full.zip&gt;</code></p>
+</div>
+{% endif %}
+
+<div class="card">
+  <form method="get" action="/companies" class="search-form">
+    <div>
+      <label>NACE-code (prefix)</label>
+      <input type="text" name="nace" value="{{ criteria.nace }}" placeholder="bv. 62 of 62010">
+    </div>
+    <div>
+      <label>Naam {% if criteria.exact_name %}(exact){% endif %}</label>
+      <input type="text" name="name" value="{{ criteria.name }}" placeholder="(deel van) naam">
+    </div>
+    <div>
+      <label><input type="checkbox" name="exact_name" {% if criteria.exact_name %}checked{% endif %}> Exacte naam</label>
+      <label><input type="checkbox" name="active_only" {% if criteria.active_only %}checked{% endif %}> Alleen actieve</label>
+    </div>
+    <div>
+      <label>Ondernemingsnummer</label>
+      <input type="text" name="enterprise_number" value="{{ criteria.enterprise_number }}" placeholder="0123.456.789">
+    </div>
+    <div>
+      <label>Postcode</label>
+      <input type="text" name="zipcode" value="{{ criteria.zipcode }}">
+    </div>
+    <div>
+      <label>Gemeente</label>
+      <input type="text" name="municipality" value="{{ criteria.municipality }}">
+    </div>
+    <div>
+      <label>Provincie</label>
+      <select name="province">
+        <option value="">— alle —</option>
+        {% for p in provinces %}
+        <option value="{{ p }}" {% if criteria.province == p %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div><button type="submit">Zoeken</button></div>
+  </form>
+</div>
+
+{% if searched %}
+<div class="card">
+  <h2>{{ total }} resultaten {% if nace_desc %}<span class="muted">— NACE {{ criteria.nace }}: {{ nace_desc }}</span>{% endif %}</h2>
+
+  {% if total > 0 %}
+  <form method="post" action="/companies/save-list" style="margin-bottom:0.8rem; display:flex; gap:0.5rem; flex-wrap:wrap;">
+    <input type="hidden" name="criteria_json" value='{{ criteria | tojson }}'>
+    <input type="text" name="list_name" placeholder="Naam voor deze longlist" required style="max-width:300px">
+    <button type="submit" class="btn-secondary">Bewaar als longlist (max 5000)</button>
+  </form>
+  {% endif %}
+
+  <div class="table-wrap">
+    <table>
+      <tr><th>Nummer</th><th>Naam</th><th>NACE</th><th>Postcode</th><th>Gemeente</th><th>Provincie</th><th>Rechtsvorm</th></tr>
+      {% for r in rows %}
+      <tr>
+        <td><a href="/companies/{{ r.enterprise_number }}">{{ r.enterprise_number }}</a></td>
+        <td>{{ r.name or "—" }}</td>
+        <td>{{ r.main_nace or "—" }}</td>
+        <td>{{ r.zipcode or "—" }}</td>
+        <td>{{ r.municipality or "—" }}</td>
+        <td>{{ r.province or "—" }}</td>
+        <td>{{ r.juridical_form or "—" }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  {% if total > per_page %}
+  <p>
+    {% set qs = request.query_params | string %}
+    Pagina {{ page }} van {{ ((total - 1) // per_page) + 1 }}
+    {% if page > 1 %}<a class="btn btn-small" href="/companies?{{ qs | replace('page=' ~ page, 'page=' ~ (page - 1)) }}{% if 'page=' not in qs %}&page={{ page - 1 }}{% endif %}">Vorige</a>{% endif %}
+    {% if page * per_page < total %}<a class="btn btn-small" href="/companies?{{ qs | replace('page=' ~ page, 'page=' ~ (page + 1)) }}{% if 'page=' not in qs %}&page={{ page + 1 }}{% endif %}">Volgende</a>{% endif %}
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

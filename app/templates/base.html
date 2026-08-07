@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}NBB M&A Screening{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+{% if user is defined and user %}
+<nav>
+  <span class="brand">NBB Screening</span>
+  <a href="/">Dashboard</a>
+  <a href="/companies">Zoeken</a>
+  <a href="/lists">Longlists</a>
+  <a href="/prompts">Prompts</a>
+  {% if user.role == 'admin' %}
+    <a href="/admin/users">Gebruikers</a>
+    <a href="/admin/audit">Audit</a>
+  {% endif %}
+  <span class="spacer"></span>
+  <span class="who">{{ user.email }}</span>
+  <a href="/logout">Uitloggen</a>
+</nav>
+{% endif %}
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

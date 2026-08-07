@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Auditlog <span class="muted">({{ total }} regels)</span></h1>
+<div class="card">
+  <div class="table-wrap"><table>
+    <tr><th>Tijdstip</th><th>Gebruiker</th><th>Actie</th><th>Detail</th></tr>
+    {% for e in entries %}
+    <tr>
+      <td>{{ e.created_at.strftime("%d-%m-%Y %H:%M:%S") }}</td>
+      <td>{{ e.user.email if e.user else "—" }}</td>
+      <td>{{ e.action }}</td>
+      <td style="white-space:normal">{{ e.detail }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  <p>
+    {% if page > 1 %}<a class="btn btn-small" href="/admin/audit?page={{ page - 1 }}">Vorige</a>{% endif %}
+    {% if page * per_page < total %}<a class="btn btn-small" href="/admin/audit?page={{ page + 1 }}">Volgende</a>{% endif %}
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Analyseprompts</h1>
+
+<div class="card">
+  <h2>Nieuwe prompt</h2>
+  <p class="muted">Deze prompt draait elke ochtend automatisch over de nieuwe
+  NBB-neerleggingen van de vorige dag. De conclusie wordt gemaild naar de ontvangers.</p>
+  <form method="post" action="/prompts">
+    <label>Naam</label>
+    <input type="text" name="name" required placeholder="bv. Roll-up kandidaten NACE 62">
+    <label style="margin-top:0.6rem">Prompt / analysevraag</label>
+    <textarea name="prompt_text" required placeholder="bv. Welke van deze neerleggingen betreffen bedrijven met een EBITDA boven 1 miljoen euro en een dalende schuldgraad? Geef per bedrijf een korte motivering."></textarea>
+    <label style="margin-top:0.6rem">Ontvangers (komma-gescheiden e-mails)</label>
+    <input type="text" name="recipients" placeholder="jij@voorbeeld.be, collega@voorbeeld.be">
+    <div style="margin-top:0.8rem"><button type="submit">Aanmaken</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Bestaande prompts</h2>
+  {% if prompts %}
+  <div class="table-wrap"><table>
+    <tr><th>Naam</th><th>Status</th><th>Ontvangers</th><th>Eigenaar</th><th></th></tr>
+    {% for p in prompts %}
+    <tr>
+      <td><a href="/prompts/{{ p.id }}/runs">{{ p.name }}</a></td>
+      <td>{% if p.enabled %}<span class="badge ok">actief</span>{% else %}<span class="badge">gepauzeerd</span>{% endif %}</td>
+      <td>{{ p.recipients or "—" }}</td>
+      <td>{{ p.owner.email }}</td>
+      <td>
+        <form method="post" action="/prompts/{{ p.id }}/run" style="display:inline">
+          <button class="btn-small btn-secondary">Nu uitvoeren</button>
+        </form>
+        <form method="post" action="/prompts/{{ p.id }}/toggle" style="display:inline">
+          <button class="btn-small">{% if p.enabled %}Pauzeren{% else %}Activeren{% endif %}</button>
+        </form>
+        <form method="post" action="/prompts/{{ p.id }}/delete" style="display:inline"
+              onsubmit="return confirm('Prompt verwijderen?')">
+          <button class="btn-small btn-danger">Verwijderen</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}
+  <p class="muted">Nog geen prompts.</p>
+  {% endif %}
+</div>
+{% endblock %}

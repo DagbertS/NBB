@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ l.name }}</h1>
+<div class="card">
+  <p class="muted">{{ l.description }} — criteria: <code>{{ l.criteria }}</code></p>
+  <form method="post" action="/lists/{{ l.id }}/fetch-nbb" style="display:inline">
+    <button type="submit">Haal NBB-documenten op voor alle bedrijven</button>
+  </form>
+  <p class="muted" style="margin-top:0.4rem">
+    Het ophalen loopt op de achtergrond, één bedrijf per keer. Herlaad de pagina om de status te zien.
+  </p>
+
+  <div class="table-wrap"><table>
+    <tr><th>Nummer</th><th>Naam</th><th>NACE</th><th>Postcode</th><th>Gemeente</th><th>NBB-status</th></tr>
+    {% for item in l.items %}
+    <tr>
+      <td><a href="/companies/{{ item.enterprise_number }}">{{ item.enterprise_number }}</a></td>
+      <td>{{ item.name or "—" }}</td>
+      <td>{{ item.nace_code or "—" }}</td>
+      <td>{{ item.zipcode or "—" }}</td>
+      <td>{{ item.municipality or "—" }}</td>
+      <td>
+        {% if item.nbb_status == 'fetched' %}<span class="badge ok">opgehaald</span>
+        {% elif item.nbb_status == 'error' %}<span class="badge err">fout</span>
+        {% elif item.nbb_status == 'none' %}<span class="badge">geen neerleggingen</span>
+        {% else %}<span class="badge">wachtend</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Analyserapport — {{ enterprise_number }}</h1>
+<p><a href="/companies/{{ enterprise_number }}">&larr; terug naar bedrijfsfiche</a></p>
+<div class="card">
+  <pre class="report">{{ report }}</pre>
+</div>
+{% endblock %}

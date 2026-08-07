@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Onderneming {{ enterprise_number }}</h1>
+
+{% if detail %}
+<div class="card">
+  <h2>{{ detail.company.name or "Onbekende naam" }}</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Status</th><td>{{ detail.company.status }}</td></tr>
+    <tr><th>Rechtsvorm</th><td>{{ detail.company.juridical_form or "—" }}</td></tr>
+    <tr><th>Startdatum</th><td>{{ detail.company.start_date or "—" }}</td></tr>
+    <tr><th>Hoofd-NACE</th><td>{{ detail.company.main_nace or "—" }} {{ nace_desc }}</td></tr>
+    <tr><th>Adres</th><td>
+      {% for a in detail.addresses %}{{ a.StreetNL }} {{ a.HouseNumber }}, {{ a.Zipcode }} {{ a.MunicipalityNL or a.MunicipalityFR }}<br>{% endfor %}
+    </td></tr>
+    <tr><th>Vestigingen</th><td>{{ detail.establishments | length }}</td></tr>
+  </table></div>
+
+  {% if detail.activities %}
+  <h2>Activiteiten (NACE)</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Code</th><th>Versie</th><th>Type</th></tr>
+    {% for act in detail.activities %}
+    <tr><td>{{ act.NaceCode }}</td><td>{{ act.NaceVersion }}</td><td>{{ act.Classification }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+</div>
+{% else %}
+<div class="card"><p class="muted">Geen KBO-gegevens lokaal gevonden voor dit nummer.</p></div>
+{% endif %}
+
+<div class="card">
+  <h2>NBB-neerleggingen ({{ deposits | length }})</h2>
+  <form method="post" action="/nbb/fetch/{{ enterprise_number }}" style="display:inline">
+    <button type="submit">Ophalen bij NBB</button>
+  </form>
+  <a class="btn btn-secondary" href="/nbb/report/{{ enterprise_number }}">Genereer analyserapport</a>
+
+  {% if deposits %}
+  <div class="table-wrap" style="margin-top:0.8rem"><table>
+    <tr><th>Referentie</th><th>Neergelegd</th><th>Boekjaar t.e.m.</th><th>Model</th><th>Formaat</th><th></th></tr>
+    {% for d in deposits %}
+    <tr>
+      <td>{{ d.reference }}</td>
+      <td>{{ d.deposit_date or "—" }}</td>
+      <td>{{ d.exercise_end or "—" }}</td>
+      <td>{{ d.model_type or "—" }}</td>
+      <td>{{ d.data_format }}</td>
+      <td><a class="btn btn-small" href="/nbb/document/{{ d.id }}">Download</a></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+</div>
+{% endblock %}

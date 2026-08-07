@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Longlists</h1>
+<div class="card">
+  {% if lists %}
+  <div class="table-wrap"><table>
+    <tr><th>Naam</th><th>Aangemaakt</th><th>Bedrijven</th><th>Eigenaar</th><th></th></tr>
+    {% for l in lists %}
+    <tr>
+      <td><a href="/lists/{{ l.id }}">{{ l.name }}</a></td>
+      <td>{{ l.created_at.strftime("%d-%m-%Y") }}</td>
+      <td>{{ l.items | length }}</td>
+      <td>{{ l.owner.email }}</td>
+      <td>
+        <form method="post" action="/lists/{{ l.id }}/delete" style="display:inline"
+              onsubmit="return confirm('Lijst verwijderen?')">
+          <button class="btn-danger btn-small">Verwijderen</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}
+  <p class="muted">Nog geen longlists. Maak er een via <a href="/companies">Zoeken</a> —
+  zoek op NACE-code en bewaar het resultaat als lijst.</p>
+  {% endif %}
+</div>
+{% endblock %}

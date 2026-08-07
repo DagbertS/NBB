@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Runs — {{ prompt.name }}</h1>
+<p><a href="/prompts">&larr; terug naar prompts</a></p>
+{% for run in runs %}
+<div class="card">
+  <p>
+    <strong>{{ run.run_at.strftime("%d-%m-%Y %H:%M") }}</strong>
+    {% if run.status == 'ok' %}<span class="badge ok">ok</span>{% else %}<span class="badge err">fout</span>{% endif %}
+    {% if run.emailed %}<span class="badge ok">gemaild</span>{% endif %}
+  </p>
+  <pre class="report">{{ run.result_text }}</pre>
+</div>
+{% else %}
+<div class="card"><p class="muted">Nog geen runs. Klik op "Nu uitvoeren" bij de prompt.</p></div>
+{% endfor %}
+{% endblock %}

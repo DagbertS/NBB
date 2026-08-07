@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="grid">
+  <div class="card stat">
+    <div class="value">{{ "{:,}".format(company_count).replace(",", ".") }}</div>
+    <div class="label">Ondernemingen in lokale KBO-database</div>
+  </div>
+  <div class="card stat">
+    <div class="value">{{ deposit_count }}</div>
+    <div class="label">NBB-neerleggingen lokaal</div>
+  </div>
+  <div class="card stat">
+    <div class="value">{{ list_count }}</div>
+    <div class="label">Longlists</div>
+  </div>
+  <div class="card stat">
+    <div class="value">{{ prompt_count }}</div>
+    <div class="label">Analyseprompts</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Status databronnen</h2>
+  <ul>
+    <li>KBO Full-import:
+      {% if last_import %}<span class="badge ok">{{ last_import }}</span>
+      {% else %}<span class="badge err">nog niet uitgevoerd</span>
+      — importeer eenmalig met <code>python scripts/import_kbo.py &lt;Full.zip&gt;</code>{% endif %}
+    </li>
+    <li>Laatste KBO-update: {{ last_update or "—" }} <span class="muted">(dagelijks automatisch gecontroleerd, 05:30)</span></li>
+    <li>Laatste NBB daily extract: {{ last_extract or "—" }} <span class="muted">(dagelijks automatisch, 07:00)</span></li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Snel starten</h2>
+  <p><a class="btn" href="/companies">Zoek bedrijven (NACE / naam / postcode)</a>
+     <a class="btn btn-secondary" href="/prompts">Dagelijkse analyseprompt instellen</a></p>
+</div>
+{% endblock %}

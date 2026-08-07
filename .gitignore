@@ -1,0 +1,19 @@
+# Secrets — nooit committen
+.env
+
+# Data (KBO-extracten, documenten, database)
+data/
+*.db
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
