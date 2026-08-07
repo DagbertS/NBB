@@ -1,5 +1,8 @@
 FROM python:3.12-slim
 
+# Logs direct doorsturen (anders blijven ze in de buffer hangen op Railway)
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 COPY requirements.txt .
