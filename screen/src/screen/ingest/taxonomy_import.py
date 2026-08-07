@@ -121,35 +121,44 @@ def _codes_from_zip(path: Path) -> set[str]:
     return codes
 
 
-def import_taxonomy(source_file: str | Path, out_path: Path | None = None) -> tuple[Path, int]:
-    """Scan het bronbestand en schrijf de gevonden rubriekcodes weg."""
-    source_file = Path(source_file)
-    if not source_file.exists():
-        raise TaxonomyImportError(f"Bestand niet gevonden: {source_file}")
-
+def _codes_from_file(source_file: Path) -> set[str]:
     suffix = source_file.suffix.lower()
     if suffix in (".xlsx", ".xls"):
-        codes = _codes_from_excel(source_file)
-    elif suffix == ".csv":
-        codes = _codes_from_csv(source_file)
-    elif suffix == ".pdf":
-        codes = _codes_from_pdf(source_file)
-    elif suffix == ".zip":
-        codes = _codes_from_zip(source_file)
-    else:
-        raise TaxonomyImportError(
-            f"Onbekend formaat {suffix} — geef een .pdf, .zip, .xlsx of .csv van de NBB"
-        )
+        return _codes_from_excel(source_file)
+    if suffix == ".csv":
+        return _codes_from_csv(source_file)
+    if suffix == ".pdf":
+        return _codes_from_pdf(source_file)
+    if suffix == ".zip":
+        return _codes_from_zip(source_file)
+    raise TaxonomyImportError(
+        f"Onbekend formaat {suffix} — geef een .pdf, .zip, .xlsx of .csv van de NBB"
+    )
 
-    if not codes:
-        raise TaxonomyImportError(
-            f"Geen rubriekcodes herkend in {source_file.name} — is dit het "
-            "juiste NBB-bestand (model-PDF, taxonomie-zip of rubriekenlijst)?"
-        )
+
+def import_taxonomy(source_files, out_path: Path | None = None) -> tuple[Path, int]:
+    """Scan één of meer bronbestanden (bv. de model-PDF's volledig, verkort
+    en micro samen) en schrijf de verenigde rubriekcodelijst weg."""
+    if isinstance(source_files, (str, Path)):
+        source_files = [source_files]
+    paths = [Path(p) for p in source_files]
+    missing = [str(p) for p in paths if not p.exists()]
+    if missing:
+        raise TaxonomyImportError(f"Bestand(en) niet gevonden: {missing}")
+
+    codes: set[str] = set()
+    for path in paths:
+        found = _codes_from_file(path)
+        if not found:
+            raise TaxonomyImportError(
+                f"Geen rubriekcodes herkend in {path.name} — is dit het "
+                "juiste NBB-bestand (model-PDF, taxonomie-zip of rubriekenlijst)?"
+            )
+        codes |= found
 
     out_path = out_path or RUBRICS_PATH
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("code\n" + "\n".join(sorted(codes)) + "\n")
     manifest.register(out_path, source="nbb-taxonomy",
-                      source_url=f"manual:{source_file.name}")
+                      source_url="manual:" + ",".join(p.name for p in paths))
     return out_path, len(codes)

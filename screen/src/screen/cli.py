@@ -38,9 +38,9 @@ def ingest(
     statbel_url: list[str] = typer.Option(
         None, help="Statbel: extra/vervangende download in de vorm naam=url"
     ),
-    local: Path = typer.Option(
-        None, help="taxonomy: lokaal NBB-bestand (modellen-Excel of taxonomie-"
-                   "export) om rubrics.csv uit op te bouwen"
+    local: list[Path] = typer.Option(
+        None, help="taxonomy: lokaal NBB-bestand (model-PDF, taxonomie-zip, xlsx "
+                   "of csv); herhaal de optie om meerdere modellen samen te voegen"
     ),
 ):
     """Download en versioneer ruwe bronbestanden (idempotent, met manifest)."""
@@ -80,13 +80,14 @@ def ingest(
 
         if not local:
             typer.secho(
-                "Geef het gedownloade NBB-bestand mee: screen ingest taxonomy "
-                "--local ~/Downloads/'Jaarrekening NL 2025.xlsx' (zie docs/SOURCES.md)",
+                "Geef de gedownloade NBB-bestand(en) mee, bv.: screen ingest taxonomy "
+                "--local ~/Downloads/volledigmodel.pdf --local ~/Downloads/"
+                "verkortmodel.pdf (zie docs/SOURCES.md)",
                 fg="red",
             )
             raise typer.Exit(1)
         try:
-            path, count = taxonomy_import.import_taxonomy(local)
+            path, count = taxonomy_import.import_taxonomy(list(local))
         except taxonomy_import.TaxonomyImportError as exc:
             typer.secho(str(exc), fg="red")
             raise typer.Exit(1)

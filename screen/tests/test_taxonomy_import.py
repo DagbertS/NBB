@@ -102,6 +102,29 @@ def test_import_from_pdf(tax_import, tmp_path):
     assert "10/15" in content and "70" in content and "9901" in content
 
 
+def test_import_merges_multiple_files(tax_import, tmp_path):
+    """Meerdere model-PDF's (volledig/verkort/micro) samen -> één verenigde lijst."""
+    volledig = tmp_path / "volledigmodel.pdf"
+    volledig.write_bytes(_minimal_pdf("Eigen vermogen 10/15 Omzet 70"))
+    verkort = tmp_path / "verkortmodel.pdf"
+    verkort.write_bytes(_minimal_pdf("Brutomarge 9900 Personeelskosten 62"))
+    micro = tmp_path / "micromodel.csv"
+    micro.write_text("Bezoldigingen;62;\nEBIT;9901;\n")
+
+    path, count = tax_import.import_taxonomy([volledig, verkort, micro])
+    content = path.read_text().splitlines()
+    for code in ("10/15", "70", "9900", "62", "9901"):
+        assert code in content
+    assert count >= 5
+
+
+def test_import_multiple_fails_on_missing_file(tax_import, tmp_path):
+    ok = tmp_path / "model.csv"
+    ok.write_text("Omzet;70;\n")
+    with pytest.raises(tax_import.TaxonomyImportError, match="niet gevonden"):
+        tax_import.import_taxonomy([ok, tmp_path / "bestaat-niet.pdf"])
+
+
 def test_import_from_taxonomy_zip(tax_import, tmp_path):
     """De taxonomie-download is een zip met xml/xsd — alle leden worden gescand."""
     import zipfile
