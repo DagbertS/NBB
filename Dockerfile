@@ -10,6 +10,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# De screening-pipeline (fases 1-6) als bibliotheek voor de webapp
+RUN pip install --no-cache-dir ./screen
+
 EXPOSE 8000
 
 # 1 worker: de scheduler (dagelijkse taken) moet maar één keer draaien.

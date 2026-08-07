@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Longlist — NBB M&A Screening{% endblock %}
+{% block content %}
+<h1>Screening-longlist</h1>
+<p><a href="/screening">&larr; terug naar screening</a></p>
+
+{% if not built %}
+<div class="card">
+  <p>De longlist is nog niet gebouwd. Ga naar <a href="/screening">Screening</a>
+     en draai "Build &amp; rank" (beheerder).</p>
+</div>
+{% else %}
+<div class="card">
+  <form method="get" action="/screening/longlist"
+        style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:end">
+    <div style="flex:1; min-width:180px">
+      <label>Zoek (naam of nummer)</label>
+      <input type="text" name="q" value="{{ q }}">
+    </div>
+    <div>
+      <label>Klasse</label>
+      <select name="klasse">
+        <option value="">alle</option>
+        {% for k in ("platform", "bolt_on", "tussenmaat") %}
+        <option value="{{ k }}" {% if klasse == k %}selected{% endif %}>{{ k }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Min. score</label>
+      <input type="text" name="min_score" value="{{ min_score }}" style="width:90px">
+    </div>
+    <div>
+      <label>Sorteer op</label>
+      <select name="sort">
+        {% for value, label in (("score", "score"), ("revenue", "omzet"),
+                                ("ebitda", "EBITDA"), ("fte", "VTE"), ("name", "naam")) %}
+        <option value="{{ value }}" {% if sort == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn-small">Filter</button>
+    <a class="btn btn-secondary btn-small" href="/screening/longlist.csv">Download CSV</a>
+  </form>
+
+  <p class="muted" style="margin-top:0.5rem">{{ "{:,}".format(total).replace(",", ".") }} ondernemingen — pagina {{ page }}/{{ pages }}</p>
+
+  <div class="table-wrap"><table>
+    <tr><th>#</th><th>Score</th><th>Naam</th><th>Nummer</th><th>Klasse</th>
+        <th>Boekjaar</th><th>Omzet</th><th>EBITDA</th><th>VTE</th>
+        <th>Signalen</th><th>Provincie</th><th>NACE</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.rank }}</td>
+      <td><strong>{{ r.score }}</strong></td>
+      <td><a href="/screening/company/{{ r.number }}">{{ r.name }}</a>
+        {% if r.ambiguous %}<span title="NACE-conversie 2008→2025 was 1-op-veel — activiteit verifiëren">⚠</span>{% endif %}
+      </td>
+      <td>{{ r.number }}</td>
+      <td>{{ r.klasse }}</td>
+      <td>{{ r.year }}</td>
+      <td>{{ r.revenue }}</td>
+      <td>{{ r.ebitda }}</td>
+      <td>{{ r.fte }}</td>
+      <td>{{ r.signals or "—" }}</td>
+      <td>{{ r.province }}</td>
+      <td>{{ r.nace }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+
+  {% if pages > 1 %}
+  <p style="margin-top:0.6rem">
+    {% if page > 1 %}<a class="btn btn-small btn-secondary" href="?q={{ q }}&klasse={{ klasse }}&min_score={{ min_score }}&sort={{ sort }}&page={{ page - 1 }}">&larr; vorige</a>{% endif %}
+    {% if page < pages %}<a class="btn btn-small btn-secondary" href="?q={{ q }}&klasse={{ klasse }}&min_score={{ min_score }}&sort={{ sort }}&page={{ page + 1 }}">volgende &rarr;</a>{% endif %}
+  </p>
+  {% endif %}
+
+  <p class="muted" style="margin-top:0.6rem">
+    * = geschatte omzet (bron 'estimate') — afgeleid uit de brutomarge, nooit een
+    gepubliceerd feit. Een streepje bij de score betekent: onvoldoende financiële
+    data om te ranken (bewust geen score).
+  </p>
+</div>
+{% endif %}
+{% endblock %}

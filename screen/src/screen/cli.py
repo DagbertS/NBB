@@ -132,65 +132,19 @@ def build(
     peers -> kwartielen -> signalen. Elke stap slaat netjes over als zijn
     input ontbreekt. Score/report (fase 6) volgen.
     """
-    config.ensure_data_dirs()
-    from . import build as build_mod
-    from .normalize import build_metrics as norm
-    from .peers import benchmark as bench
-    from .peers import nace_bridge, peer_set
-
-    thesis = _thesis()
-
-    typer.echo("KBO -> parquet:")
-    build_mod.build_kbo(progress=typer.echo)
-
-    typer.echo("NBB-neerleggingen -> facts.parquet:")
-    result = build_mod.build_facts(strict_taxonomy=strict_taxonomy, progress=typer.echo)
-    if result.skipped:
-        typer.secho(
-            f"  {len(result.skipped)} neerlegging(en) overgeslagen (run liep door):",
-            fg="yellow",
-        )
-        for name, reason in result.skipped:
-            typer.echo(f"    - {name}: {reason}")
-
-    typer.echo("Peer-universe (KBO-selectie op de thesis):")
-    universe = None
-    try:
-        bridge = nace_bridge.load_bridge()
-        if bridge is None:
-            typer.echo("  Statbel-conversietabel niet geladen — 1-op-veel-vlag blijft null")
-        universe = peer_set.build_universe(
-            thesis, overrides=config.load_overrides(), bridge=bridge,
-            progress=typer.echo,
-        )
-    except peer_set.PeerSetError as exc:
-        typer.secho(f"  overgeslagen: {exc}", fg="yellow")
-
-    ratio_note = ""
-    if revenue_ratio is not None:
-        ratio_note = "handmatige aanname via --revenue-ratio"
-    elif universe is not None:
-        revenue_ratio, ratio_note = peer_set.compute_revenue_ratio(universe)
-        typer.echo(f"  omzet/brutomarge-ratio: "
-                   f"{revenue_ratio if revenue_ratio else 'niet beschikbaar'} ({ratio_note})")
-
-    typer.echo("Normalize -> metrics.parquet:")
-    norm.build_metrics(revenue_ratio=revenue_ratio, revenue_ratio_note=ratio_note,
-                       progress=typer.echo)
-
-    if universe is not None:
-        typer.echo("Peers + benchmark:")
-        peer_result = peer_set.build_peers(universe, thesis, mva_min=mva_min,
-                                           progress=typer.echo)
-        if peer_result.peer_count:
-            bench.build_benchmark(progress=typer.echo)
-
-    typer.echo("Signalen -> signals.parquet:")
-    from .signals import build_signals as sig
+    from . import orchestrate
     from .signals.manual_input import ManualSignalError
 
+    thesis = _thesis()
     try:
-        sig.build_signals(manual_path=manual_signals, progress=typer.echo)
+        orchestrate.run_build(
+            thesis,
+            strict_taxonomy=strict_taxonomy,
+            revenue_ratio=revenue_ratio,
+            mva_min=mva_min,
+            manual_signals=manual_signals,
+            progress=typer.echo,
+        )
     except ManualSignalError as exc:
         typer.secho(f"  handmatige signalen geweigerd: {exc}", fg="red")
         raise typer.Exit(1)

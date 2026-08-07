@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Screening — NBB M&A Screening{% endblock %}
+{% block content %}
+<h1>Screening-pipeline</h1>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if notice %}<p class="badge ok" style="display:inline-block">{{ notice }}</p>{% endif %}
+
+<div class="grid">
+  <div class="card stat">
+    <div class="value">{{ "{:,}".format(status.longlist_rows).replace(",", ".") }}</div>
+    <div class="label">Ondernemingen in de longlist</div>
+  </div>
+  <div class="card stat">
+    <div class="value">{{ status.taxonomy_codes }}</div>
+    <div class="label">Officiële rubriekcodes (NBB-taxonomie)</div>
+  </div>
+  <div class="card stat">
+    <div class="value">{{ status.deposits }}</div>
+    <div class="label">NBB-neerleggingen (ruwe data)</div>
+  </div>
+  <div class="card stat">
+    <div class="value">{% if status.kbo_zip %}✓{% else %}—{% endif %}</div>
+    <div class="label">KBO Full-dump aanwezig</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Pipeline draaien</h2>
+  <p class="muted">
+    Volledige keten: KBO → jaarrekening-facts → peer-universe → metrics →
+    kwartielen → signalen → gescoorde longlist. Draait op de achtergrond;
+    herlaad de pagina voor de voortgang.
+  </p>
+  {% if run_status %}
+    <p>Status:
+      {% if running %}<span class="badge">{{ run_status }}</span>
+      {% elif run_status.startswith('fout') %}<span class="badge err">{{ run_status }}</span>
+      {% else %}<span class="badge ok">{{ run_status }}</span>{% endif %}
+    </p>
+  {% endif %}
+  {% if user.role == 'admin' %}
+  <form method="post" action="/screening/run"
+        onsubmit="return confirm('Volledige pipeline draaien? Dit kan 10-30 minuten duren en draait op de achtergrond.')">
+    <button {% if running %}disabled{% endif %}>Build &amp; rank</button>
+  </form>
+  {% endif %}
+  {% if status.longlist_rows %}
+  <p style="margin-top:0.6rem">
+    <a class="btn btn-secondary" href="/screening/longlist">Bekijk de longlist</a>
+    <span class="muted">laatst gebouwd: {{ status.longlist_mtime }}</span>
+  </p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Thesis (zoekcriteria)</h2>
+  {% if thesis %}
+    <p><strong>{{ thesis.name }}</strong>{% if thesis.sector %} — {{ thesis.sector }}{% endif %}</p>
+    <p class="muted">
+      NACE ({{ thesis.nace_version }}): {{ thesis.nace_codes|join(", ") }}<br>
+      Provincies: {{ thesis.provinces|join(", ") or "alle" }}<br>
+      Gewichten: financieel {{ thesis.weights.get('financial', 0.5) }},
+      groei {{ thesis.weights.get('growth', 0.2) }},
+      signalen {{ thesis.weights.get('signals', 0.3) }}
+    </p>
+  {% else %}
+    <p class="error">Thesis kon niet geladen worden: {{ thesis_error }}</p>
+  {% endif %}
+  {% if user.role == 'admin' %}
+    <a class="btn" href="/screening/thesis">Criteria aanpassen</a>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Databestanden</h2>
+  <ul>
+    <li>KBO Full-dump:
+      {% if status.kbo_zip %}<span class="badge ok">{{ status.kbo_zip }}</span>
+        <span class="muted">({{ status.kbo_zip_mtime }})</span>
+      {% else %}<span class="badge err">ontbreekt</span>{% endif %}
+    </li>
+    <li>NBB-taxonomie (rubriekcodes):
+      {% if status.taxonomy_codes %}<span class="badge ok">{{ status.taxonomy_codes }} codes</span>
+      {% else %}<span class="badge err">nog niet geïmporteerd</span>{% endif %}
+    </li>
+    <li>NACE-conversietabel 2008↔2025:
+      {% if status.bridge %}<span class="badge ok">{{ status.bridge }}</span>
+      {% else %}<span class="badge err">ontbreekt — 1-op-veel-vlag blijft leeg</span>{% endif %}
+    </li>
+    <li>Handmatige signalen:
+      {% if status.manual_signals %}<span class="badge ok">geladen</span>
+      {% else %}<span class="badge">geen (optioneel)</span>{% endif %}
+    </li>
+  </ul>
+
+  {% if user.role == 'admin' %}
+  <hr style="border:none; border-top:1px solid #e2e8f0; margin:0.8rem 0">
+
+  <form method="post" action="/screening/upload/kbo" enctype="multipart/form-data"
+        style="margin-bottom:0.6rem">
+    <label><strong>KBO Full-zip uploaden</strong> <span class="muted">(KboOpenData_…_Full.zip, enkele GB — laat het tabblad open tijdens de upload)</span></label><br>
+    <input type="file" name="file" accept=".zip" required>
+    <button class="btn-small">Upload</button>
+  </form>
+  <form method="post" action="/screening/kbo-adopt" style="margin-bottom:0.6rem">
+    <button class="btn-small btn-secondary">Of: gebruik de zip die het dashboard al downloadde</button>
+  </form>
+
+  <form method="post" action="/screening/upload/taxonomy" enctype="multipart/form-data"
+        style="margin-bottom:0.6rem">
+    <label><strong>NBB-modellen / taxonomie</strong> <span class="muted">(meerdere bestanden tegelijk: volledig-, verkort-, micro-, conso-model als PDF, of de taxonomie-zip)</span></label><br>
+    <input type="file" name="files" accept=".pdf,.zip,.xlsx,.xls,.csv" multiple required>
+    <button class="btn-small">Importeer</button>
+  </form>
+
+  <form method="post" action="/screening/upload/bridge" enctype="multipart/form-data"
+        style="margin-bottom:0.6rem">
+    <label><strong>NACE-conversietabel</strong> <span class="muted">(conversion…xlsx van FOD Economie/Statbel)</span></label><br>
+    <input type="file" name="file" accept=".xlsx,.csv" required>
+    <button class="btn-small">Upload</button>
+  </form>
+
+  <form method="post" action="/screening/upload/manual-signals" enctype="multipart/form-data">
+    <label><strong>Handmatige signalen</strong> <span class="muted">(yaml; elk signaal met enterprise_number, signal, source en as_of — bv. Staatsblad-bevindingen uit de browser)</span></label><br>
+    <input type="file" name="file" accept=".yaml,.yml" required>
+    <button class="btn-small">Upload</button>
+  </form>
+  {% endif %}
+  <p class="muted" style="margin-top:0.6rem">Datamap: <code>{{ status.data_root }}</code></p>
+</div>
+{% endblock %}

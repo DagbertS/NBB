@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .database import Base, engine
-from .routers import admin, auth, companies, dashboard, lists, nbb, prompts
+from .routers import admin, auth, companies, dashboard, lists, nbb, prompts, screening
 from .scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -57,4 +57,5 @@ app.include_router(companies.router)
 app.include_router(lists.router)
 app.include_router(nbb.router)
 app.include_router(prompts.router)
+app.include_router(screening.router)
 app.include_router(admin.router)
