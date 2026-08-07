@@ -90,26 +90,38 @@ app/
 
 Alle data staat in `data/` (SQLite-database + documentenopslag), buiten git.
 
-## Hosting in de cloud (Render.com)
+## Hosting in de cloud (Railway)
 
-De repo bevat een `render.yaml`-blueprint. Stappen:
+1. Ga naar [railway.app](https://railway.app), log in met GitHub en kies
+   **New Project → Deploy from GitHub repo** → selecteer deze repository en
+   de juiste branch. Railway bouwt automatisch via de `Dockerfile`.
+2. **Volume toevoegen** (verplicht — anders is de database na elke deploy weg):
+   klik op de service → **Settings/rechtsklik → Attach Volume** en kies als
+   mount path `/var/data`.
+3. **Variables** instellen op de service:
 
-1. Maak een account op [render.com](https://render.com) en koppel je GitHub.
-2. Kies **New → Blueprint** en selecteer deze repository — Render leest
-   `render.yaml` en maakt de webservice + persistente schijf (10 GB) aan.
-3. Vul in het dashboard onder **Environment** de geheime waarden in
-   (KBO-login, CBSO-key, Anthropic-key, SMTP). Nooit in git zetten.
-4. Na de eerste deploy: open de **Shell** van de service en draai eenmalig:
-   ```bash
-   python scripts/create_admin.py jouw@email.be
-   python scripts/import_kbo.py --download   # haalt de Full-zip zelf op
-   ```
-5. Je app draait op `https://nbb-screening.onrender.com` (of een eigen domein).
-   Maak accounts voor je vrienden aan via **Gebruikers** (admin-menu).
+   | Variabele | Waarde |
+   |---|---|
+   | `DATABASE_PATH` | `/var/data/nbb.db` |
+   | `DOCUMENT_STORE` | `/var/data/documents` |
+   | `SECRET_KEY` | lange willekeurige string |
+   | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | jouw login — de eerste admin wordt bij het opstarten automatisch aangemaakt |
+   | `KBO_USERNAME` / `KBO_PASSWORD` | login KBO Open Data-portaal |
+   | `NBB_CBSO_SUBSCRIPTION_KEY` | key uit het CBSO-portaal |
+   | `ANTHROPIC_API_KEY` | voor de Claude-analyses |
+   | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | voor de prompt-mails |
 
-Elke push naar de gekoppelde branch deployt automatisch. De database en
-documenten staan op de persistente schijf (`/var/data`) en overleven deploys.
+4. **Netwerk**: klik op de service → **Settings → Networking → Generate
+   Domain**. Je krijgt een `*.up.railway.app`-adres met HTTPS.
+5. **KBO-data laden**: log in als admin en klik op het dashboard op
+   **"Download & importeer KBO-data"** — de server haalt zelf de nieuwste
+   Full-zip op en importeert die op de achtergrond (30–60 min; status
+   verschijnt op het dashboard).
+6. **Vrienden toevoegen**: menu **Gebruikers** → account aanmaken per persoon.
 
-Alternatief: elke VPS met Docker werkt ook (`docker build -t nbb . &&
-docker run -p 8000:8000 -v ./data:/app/data --env-file .env nbb`) — zet er
-dan een reverse proxy met HTTPS voor (bv. Caddy).
+Elke push naar de gekoppelde branch deployt automatisch; het volume met de
+database en documenten blijft staan.
+
+Alternatieven: `render.yaml` staat klaar voor Render.com, en de `Dockerfile`
+werkt op elke VPS (`docker run -p 8000:8000 -v ./data:/app/data --env-file
+.env nbb` — zet er dan HTTPS voor met bv. Caddy).

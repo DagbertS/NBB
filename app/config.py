@@ -25,5 +25,10 @@ SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USERNAME)
 
+# Eerste beheerder: wordt bij het opstarten aangemaakt als er nog geen
+# gebruikers bestaan (handig bij cloud-deploys zonder shell-toegang).
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+
 DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 DOCUMENT_STORE.mkdir(parents=True, exist_ok=True)

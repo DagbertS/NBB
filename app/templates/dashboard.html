@@ -26,8 +26,14 @@
   <ul>
     <li>KBO Full-import:
       {% if last_import %}<span class="badge ok">{{ last_import }}</span>
-      {% else %}<span class="badge err">nog niet uitgevoerd</span>
-      — importeer eenmalig met <code>python scripts/import_kbo.py &lt;Full.zip&gt;</code>{% endif %}
+      {% else %}<span class="badge err">nog niet uitgevoerd</span>{% endif %}
+      {% if import_status %}<br><span class="muted">Status: {{ import_status }}</span>{% endif %}
+      {% if user.role == 'admin' %}
+      <form method="post" action="/admin/kbo-import" style="display:inline; margin-left:0.5rem"
+            onsubmit="return confirm('KBO Full-zip downloaden en importeren? Dit duurt 30-60 minuten en draait op de achtergrond.')">
+        <button class="btn-small btn-secondary">Download &amp; importeer KBO-data</button>
+      </form>
+      {% endif %}
     </li>
     <li>Laatste KBO-update: {{ last_update or "—" }} <span class="muted">(dagelijks automatisch gecontroleerd, 05:30)</span></li>
     <li>Laatste NBB daily extract: {{ last_extract or "—" }} <span class="muted">(dagelijks automatisch, 07:00)</span></li>

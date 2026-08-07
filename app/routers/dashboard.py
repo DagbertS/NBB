@@ -33,6 +33,7 @@ def dashboard(
     last_import = db.get(Setting, "kbo_last_full_import")
     last_update = db.get(Setting, "kbo_last_update")
     last_extract = db.get(Setting, "daily_extract_last_date")
+    import_status = db.get(Setting, "kbo_import_status")
 
     return templates.TemplateResponse(
         request,
@@ -47,5 +48,6 @@ def dashboard(
             "last_import": last_import.value if last_import else None,
             "last_update": last_update.value if last_update else None,
             "last_extract": last_extract.value if last_extract else None,
+            "import_status": import_status.value if import_status else None,
         },
     )
