@@ -24,11 +24,17 @@ Zelfde repo als de webapp (`app/`), apart package `screen/` met eigen
 
 - **Fase 0 — fundament**: skelet, uv-project, CLI, thesis-loader, manifest, SOURCES.md. ✔
 - **Fase 1 — ingest**: KBO full+delta, Statbel-nomenclatuur/conversietabel, NBB (fixtures zolang CBSO-key ontbreekt). Tests op manifest, loginflow, delta. ✔
-- **Fase 2 — parse**: XBRL/JSON-XBRL → tidy `facts`; taxonomie-validatietest.
-- **Fase 3 — normalize**: metrics (EBITDA-proxy, netto financiële schuld, omzetproxy met betrouwbaarheid, owner-adjustment-vlaggen, werkkapitaaldagen, capex-intensiteit, sociale balans). Handberekende unit tests per metric.
-- **Fase 4 — peer-set + benchmark**: NACE-brug 2008↔2025 (1-op-veel-vlag), vervuilingsfilter, overrides, kwartielen op eigen peer set.
-- **Fase 5 — signals**: neerleggingssignalen, Staatsblad (na juridische check), handmatige invoer.
-- **Fase 6 — score + report**: transparante scorekaart, `longlist.parquet`, markdown one-pagers, METHODOLOGY.md.
+- **Fase 2 — parse**: XBRL/JSON-XBRL → tidy `facts`; taxonomie-validatietest. ✔
+- **Fase 3 — normalize**: metrics (EBITDA-proxy, netto financiële schuld, omzetproxy met betrouwbaarheid, owner-adjustment-vlaggen, werkkapitaaldagen, capex-intensiteit, sociale balans). Handberekende unit tests per metric. ✔
+- **Fase 4 — peer-set + benchmark**: NACE-brug 2008↔2025 (1-op-veel-vlag), vervuilingsfilter, overrides, kwartielen op eigen peer set. ✔
+- **Fase 5 — signals**: neerleggingssignalen, Staatsblad (na juridische check → handmatige invoer), handmatige invoer met verplichte source/as_of. ✔
+- **Fase 6 — score + report**: transparante scorekaart, `longlist.parquet`, markdown one-pagers, METHODOLOGY.md. ✔
+
+Alle zes fasen zijn opgeleverd. Openstaand voor de eerste echte run:
+officiële taxonomielijst plaatsen (poortwachter-test), CBSO-key (live
+NBB-ingest, fase-2-parser valideren op echte neerlegging), Statbel-
+bestanden ophalen, en de ejustice-robots.txt-check vóór eventuele
+Staatsblad-automatisering.
 
 ## Bekende onzekerheden
 

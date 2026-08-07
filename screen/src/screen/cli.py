@@ -172,23 +172,57 @@ def build(
         raise typer.Exit(1)
 
     typer.secho(
-        "Klaar t/m signals. Score + report (fase 6) volgen — zie docs/PLAN.md.",
+        "Build klaar (parse -> normalize -> peers -> benchmark -> signals). "
+        "Rank de longlist met 'screen rank'; one-pager via 'screen report <nr>'.",
         fg="green",
     )
 
 
 @app.command()
-def rank():
-    """Scorekaart toepassen en longlist ranken (fase 6)."""
-    typer.secho("Nog niet beschikbaar: 'rank' volgt in fase 6 (zie docs/PLAN.md).", fg="yellow")
-    raise typer.Exit(1)
+def rank(
+    top: int = typer.Option(25, help="Aantal rijen dat in de terminal getoond wordt"),
+):
+    """Scorekaart toepassen: marts/longlist.parquet bouwen en tonen (gerankt)."""
+    config.ensure_data_dirs()
+    from .score import build_longlist as ll
+
+    thesis = _thesis()
+    typer.echo(f"Longlist voor thesis '{thesis.name}':")
+    result = ll.build_longlist(thesis, progress=typer.echo)
+    if not result.longlist_path:
+        raise typer.Exit(1)
+
+    import polars as pl
+
+    df = pl.read_parquet(result.longlist_path).head(top)
+    typer.echo("")
+    typer.echo(f"{'#':>3} {'score':>6} {'nummer':<12} {'klasse':<10} "
+               f"{'EBITDA':>12} {'omzet':>14} naam")
+    for i, row in enumerate(df.iter_rows(named=True), 1):
+        score = f"{row['score_total']:.1f}" if row["score_total"] is not None else "—"
+        ebitda = f"{row['ebitda_proxy']:,.0f}" if row["ebitda_proxy"] is not None else "—"
+        revenue = f"{row['revenue']:,.0f}" if row["revenue"] is not None else "—"
+        if row.get("revenue_source") == "estimate" and row["revenue"] is not None:
+            revenue += "*"
+        typer.echo(f"{i:>3} {score:>6} {row['enterprise_number']:<12} "
+                   f"{(row['target_class'] or '—'):<10} {ebitda:>12} {revenue:>14} "
+                   f"{row['name'] or '—'}")
+    typer.echo("\n* = geschatte omzet (source='estimate') — nooit een gepubliceerd feit")
 
 
 @app.command()
 def report(enterprise_number: str = typer.Argument(..., help="Ondernemingsnummer")):
-    """Markdown one-pager voor één target (fase 6)."""
-    typer.secho("Nog niet beschikbaar: 'report' volgt in fase 6 (zie docs/PLAN.md).", fg="yellow")
-    raise typer.Exit(1)
+    """Markdown one-pager voor één target -> data/reports/<nummer>.md."""
+    config.ensure_data_dirs()
+    from .report import onepager
+
+    try:
+        path = onepager.write_report(enterprise_number)
+    except onepager.ReportError as exc:
+        typer.secho(str(exc), fg="red")
+        raise typer.Exit(1)
+    typer.echo(path.read_text())
+    typer.secho(f"\nOpgeslagen als {path}", fg="green")
 
 
 if __name__ == "__main__":

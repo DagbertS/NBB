@@ -149,6 +149,26 @@ publicaties, vergunningen, RSZ-dagvaardingen, opvolgingssignalen e.d. gaan
 via het handmatige YAML-bestand (`--manual-signals`, voorbeeld in
 `screen/manual_signals.example.yaml`) met de publicatiereferentie als source.
 
-## Nog niet gebouwd
+## Scorekaart en longlist (fase 6)
 
-Score en one-pagers (fase 6) — zie docs/PLAN.md.
+Geen black box: elke (deel)score krijgt een `*_basis`-kolom in
+`marts/longlist.parquet` die letterlijk zegt waaruit hij is opgebouwd, en
+alle constanten staan in `score/scorecard.py` bovenaan.
+
+| Component | Regel | Constanten |
+|---|---|---|
+| `score_financial` | gemiddelde van de beschikbare peer-percentielen × 100: ebitda_proxy ↑, revenue ↑, net_financial_debt ↓ (geïnverteerd) | — |
+| `score_growth` | CAGR van EBITDA-proxy (fallback: eigen vermogen) over de beschikbare boekjaren, lineair geschaald 0% → 0 t/m ≥ 20%/jaar → 100; vereist ≥ 2 jaren met positieve waarden | `GROWTH_FULL_SCALE = 0.20` |
+| `score_signals` | start 100, minus distress-penalty's: chronic_late_filing 25, late_filing 10/boekjaar (plafond 20), modelwissel 15, correction 5, boekjaarsignalen 5; vloer 0. Handmatige signalen hebben onbekende polariteit en krijgen bewust géén automatische penalty (wel geteld en in de one-pager getoond) | `SIGNAL_PENALTIES` |
+| `score_total` | gewogen som met de gewichten uit thesis.yaml (default 0.5/0.2/0.3); ontbreekt een component, dan hernormaliseren over de rest — en dat staat in de basis. **Uitzondering:** zonder financiële component (geen peer-percentielen) is er géén totaalscore — anders zou een bedrijf met minder data boven volledig gescoorde bedrijven ranken; die bedrijven sorteren onderaan met "onvoldoende data om te ranken" | `DEFAULT_WEIGHTS` |
+
+Classificatie platform/bolt-on: op de thesis-criteria (nu VTE:
+`targets.platform.fte_min` / `targets.bolt_on.fte_max`; ertussen =
+"tussenmaat"; zonder VTE-data = onbekend). `in_size_range` toetst de
+groottevork uit de thesis (balanstotaal/VTE) en is null bij ontbrekende data.
+
+De one-pager (`screen report <nr>`) markeert elke geschatte waarde met
+*(schatting)*, toont Q1/mediaan/Q3 + percentiel per metric, alle signalen
+met bron en datum, de volledige score-opbouw, en genereert de openstaande
+dataroom-vragen uit wat ontbreekt (omzet niet gepubliceerd, owner-
+adjustments onbeoordeeld, NACE-conversie ambigu, laattijdigheid, ...).
