@@ -1,0 +1,13 @@
+# Handmatige herclassificaties (NACE-ruis is 15-25%; zie docs/PLAN.md §6).
+# Sleutel = ondernemingsnummer (zonder punten), waarde = beslissing.
+#
+# Voorbeeld:
+# "0123456789":
+#   include: true          # forceer opname in de peer set / longlist
+#   nace_override: "37.00" # behandel als deze hoofdactiviteit
+#   note: "Website toont dat ruiming de hoofdactiviteit is, KBO zegt 43.22"
+# "0987654321":
+#   include: false
+#   note: "Managementvennootschap, geen operationele activiteit"
+
+{}

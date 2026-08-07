@@ -1,0 +1,42 @@
+# Thesis — vrij invulbare zoekcriteria, één bestand per dossier.
+# Draai met een ander dossier via:  screen --thesis pad/naar/ander.yaml ...
+# Dit is een INGEVULD VOORBEELD (ruimings- en rioleringsdiensten, Vlaanderen);
+# pas alles hieronder vrij aan.
+
+name: ruiming-riolering-vlaanderen
+sector: "Ruimings- en rioleringsdiensten"
+
+# NACE-BEL-codes: prefixmatching, dus "37" dekt 37.000 enz.
+# Neem ook aanpalende codes op. nace_version bepaalt op welke nomenclatuur
+# de peer set gefixeerd wordt (2008 of 2025).
+nace_version: 2025
+nace_codes:
+  - "37.00"   # afvalwaterafvoer / ruimingsdiensten
+  - "42.21"   # civiele bouw: pijpleidingen en riolering
+  - "43.22"   # loodgieterswerk incl. rioolaansluitingen (aanpalend)
+
+geography:
+  provinces:
+    - Antwerpen
+    - Oost-Vlaanderen
+    - Vlaams-Brabant
+    - Limburg
+
+size:
+  balance_total_min: 500000      # EUR
+  balance_total_max: 15000000    # EUR
+  fte_min: 5
+  fte_max: 120
+
+# Buy-and-build: criteria die platform- van bolt-on-kandidaten onderscheiden
+targets:
+  platform:
+    fte_min: 25                  # schaal en managementlaag aanwezig
+  bolt_on:
+    fte_max: 25                  # eigenaar-afhankelijk, opvolgingsvraag
+
+# Gewichten voor de scorekaart (fase 6) — moeten optellen tot 1.0
+weights:
+  financial: 0.5
+  growth: 0.2
+  signals: 0.3
