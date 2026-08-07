@@ -90,8 +90,26 @@ app/
 
 Alle data staat in `data/` (SQLite-database + documentenopslag), buiten git.
 
-## Hosting
+## Hosting in de cloud (Render.com)
 
-De app is één Python-proces (uvicorn) met een SQLite-database — draait op
-elke kleine VPS of PaaS (Railway, Render, Fly.io, ...). Zorg voor een
-persistente schijf voor `data/` en zet de `.env`-waarden als omgevingsvariabelen.
+De repo bevat een `render.yaml`-blueprint. Stappen:
+
+1. Maak een account op [render.com](https://render.com) en koppel je GitHub.
+2. Kies **New → Blueprint** en selecteer deze repository — Render leest
+   `render.yaml` en maakt de webservice + persistente schijf (10 GB) aan.
+3. Vul in het dashboard onder **Environment** de geheime waarden in
+   (KBO-login, CBSO-key, Anthropic-key, SMTP). Nooit in git zetten.
+4. Na de eerste deploy: open de **Shell** van de service en draai eenmalig:
+   ```bash
+   python scripts/create_admin.py jouw@email.be
+   python scripts/import_kbo.py --download   # haalt de Full-zip zelf op
+   ```
+5. Je app draait op `https://nbb-screening.onrender.com` (of een eigen domein).
+   Maak accounts voor je vrienden aan via **Gebruikers** (admin-menu).
+
+Elke push naar de gekoppelde branch deployt automatisch. De database en
+documenten staan op de persistente schijf (`/var/data`) en overleven deploys.
+
+Alternatief: elke VPS met Docker werkt ook (`docker build -t nbb . &&
+docker run -p 8000:8000 -v ./data:/app/data --env-file .env nbb`) — zet er
+dan een reverse proxy met HTTPS voor (bv. Caddy).

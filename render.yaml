@@ -1,0 +1,41 @@
+# Render.com blueprint — maak op render.com een "Blueprint" aan die naar deze
+# repo wijst, dan wordt alles hieronder automatisch aangemaakt.
+services:
+  - type: web
+    name: nbb-screening
+    runtime: python
+    plan: starter
+    branch: claude/nbb-ma-screening-app-791jm7
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    disk:
+      name: nbb-data
+      mountPath: /var/data
+      sizeGB: 10
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/nbb.db
+      - key: DOCUMENT_STORE
+        value: /var/data/documents
+      - key: SECRET_KEY
+        generateValue: true
+      # De onderstaande waarden vul je in via het Render-dashboard
+      # (Environment → Environment Variables). Nooit in git zetten.
+      - key: KBO_USERNAME
+        sync: false
+      - key: KBO_PASSWORD
+        sync: false
+      - key: NBB_CBSO_SUBSCRIPTION_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false
