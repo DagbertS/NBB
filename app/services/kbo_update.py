@@ -36,25 +36,70 @@ KEY_COLUMNS = {
 }
 
 
+BASE_SITE = "https://kbopub.economie.fgov.be"
+FILES_URL = f"{KBO_OPEN_DATA_URL}/affiliation/xml/?files"
+
+
+class KboLoginError(Exception):
+    pass
+
+
 def _login_session() -> httpx.Client:
-    """Ingelogde sessie op het KBO Open Data-portaal."""
+    """Ingelogde sessie op het KBO Open Data-portaal.
+
+    Zelfde flow als de officiële Fedict-downloadtool: loginpagina ophalen,
+    de action-URL uit het formulier lezen en daar j_username/j_password
+    naartoe posten.
+    """
     client = httpx.Client(follow_redirects=True, timeout=120)
-    if KBO_USERNAME and KBO_PASSWORD:
-        # Het portaal gebruikt een standaard j_security_check-loginformulier.
-        client.get(f"{KBO_OPEN_DATA_URL}/login")
-        client.post(
-            f"{KBO_OPEN_DATA_URL}/static/j_security_check",
-            data={"j_username": KBO_USERNAME, "j_password": KBO_PASSWORD},
+    if not (KBO_USERNAME and KBO_PASSWORD):
+        raise KboLoginError("KBO_USERNAME en/of KBO_PASSWORD zijn niet ingesteld")
+
+    resp = client.get(f"{KBO_OPEN_DATA_URL}/login")
+    resp.raise_for_status()
+    m = re.search(r"<form[^>]+action=[\"']([^\"']+)[\"']", resp.text)
+    action = m.group(1) if m else f"{KBO_OPEN_DATA_URL}/login"
+    if not action.startswith("http"):
+        action = BASE_SITE + (action if action.startswith("/") else "/" + action)
+
+    resp = client.post(
+        action, data={"j_username": KBO_USERNAME, "j_password": KBO_PASSWORD}
+    )
+    # Controle: na een geslaagde login toont de bestandenpagina de zips.
+    check = client.get(FILES_URL)
+    if "KboOpenData" not in check.text:
+        client.close()
+        raise KboLoginError(
+            "Inloggen op het KBO Open Data-portaal is geweigerd — controleer "
+            "KBO_USERNAME/KBO_PASSWORD (test ze handmatig op "
+            "kbopub.economie.fgov.be/kbo-open-data/login)"
         )
     return client
+
+
+def _file_links(html: str) -> dict[str, str]:
+    """Map bestandsnaam -> href uit de bestandenpagina."""
+    links: dict[str, str] = {}
+    for href in re.findall(r"href=[\"']([^\"']*KboOpenData[^\"']*\.zip)[\"']", html):
+        name = href.rsplit("/", 1)[-1]
+        links[name] = href
+    return links
+
+
+def _resolve_href(href: str) -> str:
+    if href.startswith("http"):
+        return href
+    if href.startswith("/"):
+        return BASE_SITE + href
+    return f"{KBO_OPEN_DATA_URL}/affiliation/xml/" + href
 
 
 def list_available_files() -> list[str]:
     """Bestandsnamen die het portaal aanbiedt (Full- en Update-zips)."""
     with _login_session() as client:
-        resp = client.get(f"{KBO_OPEN_DATA_URL}/affiliation/xml/?files")
+        resp = client.get(FILES_URL)
         resp.raise_for_status()
-        return re.findall(r"KboOpenData_\d+_\d{4}_\d{2}_(?:Full|Update)\.zip", resp.text)
+        return sorted(_file_links(resp.text))
 
 
 def _extract_number(filename: str) -> int:
@@ -68,12 +113,18 @@ def download_file(filename: str) -> Path:
     if target.exists():
         return target
     with _login_session() as client:
-        url = f"{KBO_OPEN_DATA_URL}/affiliation/xml/files/{filename}"
-        with client.stream("GET", url) as resp:
+        resp = client.get(FILES_URL)
+        links = _file_links(resp.text)
+        href = links.get(filename)
+        if not href:
+            raise KboLoginError(f"{filename} niet gevonden op de bestandenpagina")
+        tmp = target.with_suffix(".part")
+        with client.stream("GET", _resolve_href(href)) as resp:
             resp.raise_for_status()
-            with open(target, "wb") as f:
+            with open(tmp, "wb") as f:
                 for chunk in resp.iter_bytes():
                     f.write(chunk)
+        tmp.rename(target)
     return target
 
 
