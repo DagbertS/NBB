@@ -114,6 +114,25 @@ class PromptRun(Base):
     prompt: Mapped["Prompt"] = relationship(back_populates="runs")
 
 
+class ScreeningPipeline(Base):
+    """Eén gebouwde screening-pipeline: op basis van de thesis-criteria
+    (kind='thesis') of van een door de gebruiker gebouwde longlist
+    (kind='list'). De artefacten staan in marts/pipelines/<sleutel>/."""
+
+    __tablename__ = "screening_pipelines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(30), unique=True, index=True)  # 'thesis' | 'list-<id>'
+    kind: Mapped[str] = mapped_column(String(10), default="thesis")        # thesis | list
+    list_id: Mapped[int | None] = mapped_column(ForeignKey("company_lists.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(255), default="")
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    scored_count: Mapped[int] = mapped_column(Integer, default=0)
+    built_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    company_list: Mapped["CompanyList"] = relationship()
+
+
 class Analysis(Base):
     """Bewaard screeningresultaat: pipeline-one-pager of individuele screening.
     Elke run die inhoudelijk verschilt van de vorige wordt als nieuwe rij

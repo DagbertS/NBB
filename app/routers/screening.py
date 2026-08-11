@@ -21,7 +21,10 @@ router = APIRouter(prefix="/screening")
 PER_PAGE = 100
 
 
-def _overview_context(request: Request, user: User, error: str = "", notice: str = ""):
+def _overview_context(request: Request, user: User, db: Session,
+                      error: str = "", notice: str = ""):
+    from ..models import CompanyList
+
     thesis = None
     thesis_error = ""
     try:
@@ -36,29 +39,35 @@ def _overview_context(request: Request, user: User, error: str = "", notice: str
         "running": screening.is_running(),
         "thesis": thesis,
         "thesis_error": thesis_error,
+        "pipelines": screening.list_pipelines(db),
+        "company_lists": db.query(CompanyList).order_by(CompanyList.name).all(),
         "error": error,
         "notice": notice,
     }
 
 
 @router.get("")
-def overview(request: Request, user: User = Depends(get_current_user)):
+def overview(request: Request, user: User = Depends(get_current_user),
+             db: Session = Depends(get_db)):
     return templates.TemplateResponse(
-        request, "screening.html", _overview_context(request, user)
+        request, "screening.html", _overview_context(request, user, db)
     )
 
 
 @router.post("/run")
 def run_pipeline(
     background_tasks: BackgroundTasks,
+    list_id: str = Form(""),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     if screening.is_running():
         return RedirectResponse("/screening", status_code=303)
+    target = int(list_id) if list_id.strip().isdigit() else None
     screening.set_status("bezig: gestart ...")
-    background_tasks.add_task(screening.run_pipeline_bg)
-    log_action(db, user.id, "screening_run_started", "")
+    background_tasks.add_task(screening.run_pipeline_bg, target)
+    log_action(db, user.id, "screening_run_started",
+               f"list_id={target}" if target else "thesis")
     return RedirectResponse("/screening", status_code=303)
 
 
@@ -282,14 +291,17 @@ def longlist(
     min_score: str = "",
     sort: str = "score",
     page: int = 1,
+    pipeline: str = "thesis",
     user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     try:
         min_score_val = float(min_score.replace(",", ".")) if min_score.strip() else None
     except ValueError:
         min_score_val = None
     df = screening.load_longlist(q=q, target_class=klasse,
-                                 min_score=min_score_val, sort=sort)
+                                 min_score=min_score_val, sort=sort,
+                                 pipeline=pipeline)
     rows, total, pages = [], 0, 1
     if df is not None:
         total = len(df)
@@ -322,13 +334,14 @@ def longlist(
         request, "screening_longlist.html",
         {"user": user, "rows": rows, "built": df is not None, "total": total,
          "page": page, "pages": pages, "q": q, "klasse": klasse,
-         "min_score": min_score, "sort": sort},
+         "min_score": min_score, "sort": sort, "pipeline": pipeline,
+         "pipelines": screening.list_pipelines(db)},
     )
 
 
 @router.get("/longlist.csv")
-def longlist_csv(user: User = Depends(get_current_user)):
-    df = screening.load_longlist()
+def longlist_csv(pipeline: str = "thesis", user: User = Depends(get_current_user)):
+    df = screening.load_longlist(pipeline=pipeline)
     if df is None:
         return PlainTextResponse("longlist nog niet gebouwd", status_code=404)
     import io
@@ -346,12 +359,13 @@ def longlist_csv(user: User = Depends(get_current_user)):
 def company_onepager(
     request: Request,
     enterprise_number: str,
+    pipeline: str = "thesis",
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     analysis_id = None
     try:
-        report = screening.onepager_markdown(enterprise_number)
+        report = screening.onepager_markdown(enterprise_number, pipeline=pipeline)
         error = ""
         # elk gegenereerd resultaat wordt bewaard (historiek in /analyses)
         name = report.splitlines()[0].lstrip("# ").split("—")[0].strip() if report else ""

@@ -19,6 +19,7 @@ def run_build(
     revenue_ratio: float | None = None,
     mva_min: float = 0.0,
     manual_signals: Path | None = None,
+    universe_override=None,
     progress=print,
 ) -> dict:
     """Draai de volledige build. Geeft een samenvatting terug; laat
@@ -42,17 +43,27 @@ def run_build(
             progress(f"    - {name}: {reason}")
     summary["skipped_deposits"] = facts.skipped
 
-    progress("Peer-universe (KBO-selectie op de thesis):")
     universe = None
-    try:
-        bridge = nace_bridge.load_bridge()
-        if bridge is None:
-            progress("  Statbel-conversietabel niet geladen — 1-op-veel-vlag blijft null")
-        universe = peer_set.build_universe(
-            thesis, overrides=config.load_overrides(), bridge=bridge, progress=progress
-        )
-    except peer_set.PeerSetError as exc:
-        progress(f"  overgeslagen: {exc}")
+    if universe_override is not None:
+        # de selectie komt uit een door de gebruiker gebouwde longlist,
+        # niet uit de thesis-criteria
+        progress("Peer-universe (geselecteerde longlist):")
+        config.INTERIM_DIR.mkdir(parents=True, exist_ok=True)
+        universe_override.write_parquet(peer_set.UNIVERSE_PATH)
+        universe = universe_override
+        progress(f"  → universe.parquet: {universe.height} ondernemingen uit de lijst")
+    else:
+        progress("Peer-universe (KBO-selectie op de thesis):")
+        try:
+            bridge = nace_bridge.load_bridge()
+            if bridge is None:
+                progress("  Statbel-conversietabel niet geladen — 1-op-veel-vlag blijft null")
+            universe = peer_set.build_universe(
+                thesis, overrides=config.load_overrides(), bridge=bridge,
+                progress=progress,
+            )
+        except peer_set.PeerSetError as exc:
+            progress(f"  overgeslagen: {exc}")
 
     ratio_note = ""
     if revenue_ratio is not None:

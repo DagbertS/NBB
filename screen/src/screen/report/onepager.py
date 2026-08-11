@@ -46,12 +46,17 @@ def _load(path: Path) -> pl.DataFrame | None:
     return pl.read_parquet(path) if path.exists() else None
 
 
-def generate_report(enterprise_number: str) -> str:
+def generate_report(enterprise_number: str,
+                    marts_dir: Path | None = None) -> str:
+    """One-pager; marts_dir wijst optioneel naar de map van één specifieke
+    pipeline (longlist/benchmark/posities). Metrics en signalen zijn
+    bedrijfsniveau en blijven gedeeld."""
+    marts = Path(marts_dir) if marts_dir else MARTS_DIR
     num = _norm(enterprise_number)
-    longlist = _load(MARTS_DIR / "longlist.parquet")
+    longlist = _load(marts / "longlist.parquet")
     metrics = _load(INTERIM_DIR / "metrics.parquet")
-    benchmark = _load(MARTS_DIR / "benchmark.parquet")
-    positions = _load(MARTS_DIR / "peer_positions.parquet")
+    benchmark = _load(marts / "benchmark.parquet")
+    positions = _load(marts / "peer_positions.parquet")
     signals = _load(MARTS_DIR / "signals.parquet")
 
     if longlist is None:

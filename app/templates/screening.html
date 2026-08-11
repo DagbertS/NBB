@@ -29,8 +29,10 @@
   <h2>Pipeline draaien</h2>
   <p class="muted">
     Volledige keten: KBO → jaarrekening-facts → peer-universe → metrics →
-    kwartielen → signalen → gescoorde longlist. Draait op de achtergrond;
-    herlaad de pagina voor de voortgang.
+    kwartielen → signalen → gescoorde longlist. Kies als bron de
+    thesis-criteria óf een van je eigen longlists (Zoeken → "Bewaar als
+    longlist"). Elke bron krijgt zijn eigen pipeline; draait op de
+    achtergrond — herlaad de pagina voor de voortgang.
   </p>
   {% if run_status %}
     <p>Status:
@@ -41,15 +43,42 @@
   {% endif %}
   {% if user.role == 'admin' %}
   <form method="post" action="/screening/run"
-        onsubmit="return confirm('Volledige pipeline draaien? Dit kan 10-30 minuten duren en draait op de achtergrond.')">
+        style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:end"
+        onsubmit="return confirm('Deze pipeline bouwen en ranken? Dit kan even duren en draait op de achtergrond.')">
+    <div style="flex:1; min-width:240px">
+      <label>Bron van de screening</label>
+      <select name="list_id">
+        <option value="">Thesis-criteria ({{ thesis.name if thesis else 'thesis.yaml' }})</option>
+        {% for l in company_lists %}
+        <option value="{{ l.id }}">Longlist: {{ l.name }} ({{ l.items | length }} bedrijven)</option>
+        {% endfor %}
+      </select>
+    </div>
     <button {% if running %}disabled{% endif %}>Build &amp; rank</button>
   </form>
   {% endif %}
-  {% if status.longlist_rows %}
-  <p style="margin-top:0.6rem">
-    <a class="btn btn-secondary" href="/screening/longlist">Bekijk de longlist</a>
-    <span class="muted">laatst gebouwd: {{ status.longlist_mtime }}</span>
-  </p>
+</div>
+
+<div class="card">
+  <h2>Pipelines</h2>
+  {% if pipelines %}
+  <div class="table-wrap"><table>
+    <tr><th>Pipeline</th><th>Bron</th><th>Bedrijven</th><th>Met score</th>
+        <th>Laatst gebouwd</th><th></th></tr>
+    {% for p in pipelines %}
+    <tr>
+      <td>{{ p.name }}</td>
+      <td>{{ "thesis-criteria" if p.kind == "thesis" else "eigen longlist" }}</td>
+      <td>{{ p.row_count }}</td>
+      <td>{{ p.scored_count }}</td>
+      <td>{{ p.built_at.strftime("%Y-%m-%d %H:%M") if p.built_at else "—" }}</td>
+      <td><a class="btn btn-small" href="/screening/longlist?pipeline={{ p.key }}">Bekijk</a></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}
+  <p class="muted">Nog geen pipelines gebouwd. Kies hierboven een bron en druk
+  op Build &amp; rank.</p>
   {% endif %}
 </div>
 

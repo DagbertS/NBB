@@ -13,6 +13,15 @@
 <div class="card">
   <form method="get" action="/screening/longlist"
         style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:end">
+    <div style="min-width:220px">
+      <label>Pipeline</label>
+      <select name="pipeline" onchange="this.form.submit()">
+        <option value="thesis" {% if pipeline == 'thesis' %}selected{% endif %}>Thesis-criteria</option>
+        {% for p in pipelines %}{% if p.key != 'thesis' %}
+        <option value="{{ p.key }}" {% if pipeline == p.key %}selected{% endif %}>{{ p.name }}</option>
+        {% endif %}{% endfor %}
+      </select>
+    </div>
     <div style="flex:1; min-width:180px">
       <label>Zoek (naam of nummer)</label>
       <input type="text" name="q" value="{{ q }}">
@@ -40,7 +49,7 @@
       </select>
     </div>
     <button class="btn-small">Filter</button>
-    <a class="btn btn-secondary btn-small" href="/screening/longlist.csv">Download CSV</a>
+    <a class="btn btn-secondary btn-small" href="/screening/longlist.csv?pipeline={{ pipeline }}">Download CSV</a>
   </form>
 
   <p class="muted" style="margin-top:0.5rem">{{ "{:,}".format(total).replace(",", ".") }} ondernemingen — pagina {{ page }}/{{ pages }}</p>
@@ -53,7 +62,7 @@
     <tr>
       <td>{{ r.rank }}</td>
       <td><strong>{{ r.score }}</strong></td>
-      <td><a href="/screening/company/{{ r.number }}">{{ r.name }}</a>
+      <td><a href="/screening/company/{{ r.number }}?pipeline={{ pipeline }}">{{ r.name }}</a>
         {% if r.ambiguous %}<span title="NACE-conversie 2008→2025 was 1-op-veel — activiteit verifiëren">⚠</span>{% endif %}
       </td>
       <td>{{ r.number }}</td>
@@ -71,8 +80,8 @@
 
   {% if pages > 1 %}
   <p style="margin-top:0.6rem">
-    {% if page > 1 %}<a class="btn btn-small btn-secondary" href="?q={{ q }}&klasse={{ klasse }}&min_score={{ min_score }}&sort={{ sort }}&page={{ page - 1 }}">&larr; vorige</a>{% endif %}
-    {% if page < pages %}<a class="btn btn-small btn-secondary" href="?q={{ q }}&klasse={{ klasse }}&min_score={{ min_score }}&sort={{ sort }}&page={{ page + 1 }}">volgende &rarr;</a>{% endif %}
+    {% if page > 1 %}<a class="btn btn-small btn-secondary" href="?pipeline={{ pipeline }}&q={{ q }}&klasse={{ klasse }}&min_score={{ min_score }}&sort={{ sort }}&page={{ page - 1 }}">&larr; vorige</a>{% endif %}
+    {% if page < pages %}<a class="btn btn-small btn-secondary" href="?pipeline={{ pipeline }}&q={{ q }}&klasse={{ klasse }}&min_score={{ min_score }}&sort={{ sort }}&page={{ page + 1 }}">volgende &rarr;</a>{% endif %}
   </p>
   {% endif %}
 

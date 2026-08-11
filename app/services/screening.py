@@ -124,7 +124,7 @@ def data_status() -> dict:
     nbb_dir = pipeline_config.RAW_DIR / "nbb"
     deposits = len(list(nbb_dir.glob("*.json"))) if nbb_dir.exists() else 0
     facts = pipeline_config.INTERIM_DIR / "facts.parquet"
-    longlist = pipeline_config.MARTS_DIR / "longlist.parquet"
+    longlist = pipeline_longlist_path("thesis")
 
     longlist_rows = 0
     if longlist.exists():
@@ -255,9 +255,99 @@ def save_manual_signals(upload) -> int:
     return len(signals)
 
 
+# ── meerdere pipelines: thesis-criteria of een gebouwde longlist ─────────────
+
+PIPELINES_DIR = pipeline_config.MARTS_DIR / "pipelines"
+PIPELINE_ARTIFACTS = ("longlist.parquet", "benchmark.parquet",
+                      "peer_positions.parquet", "peers.parquet",
+                      "peer_criteria.json")
+
+
+def pipeline_dir(key: str) -> Path:
+    return PIPELINES_DIR / key
+
+
+def pipeline_longlist_path(key: str) -> Path:
+    """Pad van de gescoorde longlist van een pipeline; 'thesis' valt terug op
+    de klassieke locatie zolang er nog geen momentopname bestaat."""
+    snap = pipeline_dir(key) / "longlist.parquet"
+    if snap.exists():
+        return snap
+    if key == "thesis":
+        return pipeline_config.MARTS_DIR / "longlist.parquet"
+    return snap
+
+
+def pipeline_marts_dir(key: str) -> Path:
+    snap = pipeline_dir(key)
+    if (snap / "longlist.parquet").exists():
+        return snap
+    if key == "thesis":
+        return pipeline_config.MARTS_DIR
+    return snap
+
+
+def _snapshot_pipeline(key: str) -> None:
+    """Kopieer de zojuist gebouwde artefacten naar de map van deze pipeline,
+    zodat runs voor verschillende lijsten elkaar niet overschrijven."""
+    target = pipeline_dir(key)
+    target.mkdir(parents=True, exist_ok=True)
+    for name in PIPELINE_ARTIFACTS:
+        src = pipeline_config.MARTS_DIR / name
+        dst = target / name
+        if src.exists():
+            shutil.copy2(src, dst)
+        elif dst.exists():
+            dst.unlink()   # geen verse artefact -> geen verouderde momentopname
+
+
+def _universe_from_list(items) -> "object":
+    """CompanyList-items -> universe-DataFrame met dezelfde kolommen als de
+    thesis-selectie, zodat peers/benchmark/scorecard ongewijzigd werken."""
+    import polars as pl
+
+    from ..geo import province_for_zipcode
+
+    rows = []
+    for item in items:
+        number = normalize_number(item.enterprise_number)
+        if not number:
+            continue
+        rows.append({
+            "enterprise_number": number,
+            "status": "AC",
+            "zipcode": item.zipcode or None,
+            "province": province_for_zipcode(item.zipcode) if item.zipcode else None,
+            "nace_2008": None,
+            "name": item.name or None,
+            "nace_effective": (item.nace_code or "").replace(".", "").strip() or None,
+            "nace_conversion_ambiguous": None,
+            "override_included": False,
+            "override_excluded": False,
+            "crit_nace_match": True,
+            "crit_active": True,
+            "crit_not_holding": True,
+            "crit_geo": True,
+        })
+    if not rows:
+        raise ScreeningError("De gekozen longlist bevat geen bruikbare "
+                             "ondernemingsnummers")
+    return pl.DataFrame(rows, infer_schema_length=None)
+
+
+def list_pipelines(db) -> list:
+    from ..models import ScreeningPipeline
+
+    return (db.query(ScreeningPipeline)
+            .order_by(ScreeningPipeline.built_at.desc().nullslast())
+            .all())
+
+
 # ── de volledige pipeline als achtergrondtaak ────────────────────────────────
 
-def run_pipeline_bg() -> None:
+def run_pipeline_bg(list_id: int | None = None) -> None:
+    from ..database import SessionLocal
+    from ..models import CompanyList, CompanyListItem, ScreeningPipeline
     from screen import orchestrate
     from screen.score import build_longlist as ll
     from screen.signals.manual_input import ManualSignalError
@@ -267,22 +357,69 @@ def run_pipeline_bg() -> None:
         if text:
             set_status(f"bezig: {text}")
 
+    key = f"list-{list_id}" if list_id else "thesis"
     try:
         set_status("bezig: thesis laden ...")
         thesis = load_thesis()
+
+        universe_override = None
+        pipeline_name = thesis.name
+        if list_id:
+            with SessionLocal() as db:
+                company_list = db.get(CompanyList, list_id)
+                if not company_list:
+                    set_status(f"fout: longlist {list_id} bestaat niet (meer)")
+                    return
+                pipeline_name = company_list.name
+                items = (db.query(CompanyListItem)
+                         .filter(CompanyListItem.list_id == list_id).all())
+            set_status(f"bezig: universe uit longlist '{pipeline_name}' opbouwen ...")
+            universe_override = _universe_from_list(items)
+
+        # universe van een vorige (andere) run mag nooit doorlekken naar
+        # deze pipeline als de universe-stap zelf niets oplevert
+        stale_universe = pipeline_config.INTERIM_DIR / "universe.parquet"
+        stale_universe.unlink(missing_ok=True)
+
         manual = MANUAL_SIGNALS_PATH if MANUAL_SIGNALS_PATH.exists() else None
-        orchestrate.run_build(thesis, manual_signals=manual, progress=progress)
-        set_status("bezig: longlist scoren ...")
+        orchestrate.run_build(thesis, manual_signals=manual,
+                              universe_override=universe_override,
+                              progress=progress)
+        set_status(f"bezig: longlist '{pipeline_name}' scoren ...")
         result = ll.build_longlist(thesis, progress=progress)
+        _snapshot_pipeline(key)
+
+        scored = 0
+        if result.row_count and result.longlist_path:
+            import polars as pl
+
+            df = pl.read_parquet(pipeline_dir(key) / "longlist.parquet")
+            scored = df.filter(pl.col("score_total").is_not_null()).height
+
+        with SessionLocal() as db:
+            row = (db.query(ScreeningPipeline)
+                   .filter(ScreeningPipeline.key == key).first())
+            if not row:
+                row = ScreeningPipeline(key=key)
+                db.add(row)
+            row.kind = "list" if list_id else "thesis"
+            row.list_id = list_id
+            row.name = pipeline_name
+            row.row_count = result.row_count
+            row.scored_count = scored
+            row.built_at = datetime.utcnow()
+            db.commit()
+
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         if result.row_count:
-            set_status(f"klaar: longlist met {result.row_count} ondernemingen ({stamp})")
+            set_status(f"klaar: pipeline '{pipeline_name}' — {result.row_count} "
+                       f"ondernemingen, {scored} met score ({stamp})")
         else:
             set_status(
-                f"klaar zonder longlist: geen universe — controleer of de KBO-zip "
-                f"geladen is en de thesis-criteria niet te streng staan ({stamp})"
+                f"klaar zonder longlist ('{pipeline_name}'): geen universe — "
+                f"controleer de databronnen of de criteria ({stamp})"
             )
-    except (ManualSignalError, pipeline_config.ThesisError) as exc:
+    except (ScreeningError, ManualSignalError, pipeline_config.ThesisError) as exc:
         set_status(f"fout: {exc}")
     except Exception as exc:  # rapporteer elke crash in de UI i.p.v. stil te sterven
         set_status(f"fout: {type(exc).__name__}: {exc}")
@@ -300,11 +437,12 @@ LONGLIST_SORTS = {
 
 
 def load_longlist(q: str = "", target_class: str = "", min_score: float | None = None,
-                  sort: str = "score"):
-    """Gefilterde, gesorteerde longlist als polars-DataFrame (None = nog niet gebouwd)."""
+                  sort: str = "score", pipeline: str = "thesis"):
+    """Gefilterde, gesorteerde longlist van één pipeline als polars-DataFrame
+    (None = die pipeline is nog niet gebouwd)."""
     import polars as pl
 
-    path = pipeline_config.MARTS_DIR / "longlist.parquet"
+    path = pipeline_longlist_path(pipeline)
     if not path.exists():
         return None
     df = pl.read_parquet(path)
@@ -330,11 +468,12 @@ def render_report_html(markdown_text: str) -> str:
     return md_lib.markdown(markdown_text, extensions=["tables"])
 
 
-def onepager_markdown(enterprise_number: str) -> str:
+def onepager_markdown(enterprise_number: str, pipeline: str = "thesis") -> str:
     from screen.report import onepager
 
     try:
-        return onepager.generate_report(enterprise_number)
+        return onepager.generate_report(enterprise_number,
+                                        marts_dir=pipeline_marts_dir(pipeline))
     except onepager.ReportError as exc:
         raise ScreeningError(str(exc)) from exc
 
