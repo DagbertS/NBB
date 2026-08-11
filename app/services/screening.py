@@ -7,6 +7,7 @@ als achtergrondtaak met een statusregel in de settings-tabel.
 """
 
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -72,6 +73,10 @@ def is_running() -> bool:
 
 # ── thesis (zoekcriteria) ─────────────────────────────────────────────────────
 
+THESES_DIR = SCREEN_DATA_ROOT / "theses"
+PIPELINE_KEY_RE = re.compile(r"^(thesis|list-\d+)$")
+
+
 def ensure_thesis() -> Path:
     """Kopieer het voorbeeld uit de repo naar het volume bij eerste gebruik."""
     if not THESIS_PATH.exists():
@@ -80,24 +85,39 @@ def ensure_thesis() -> Path:
     return THESIS_PATH
 
 
-def load_thesis() -> pipeline_config.Thesis:
-    return pipeline_config.load_thesis(ensure_thesis())
+def thesis_path_for(key: str = "thesis") -> Path:
+    """Elke pipeline heeft eigen criteria: 'thesis' gebruikt het hoofdbestand;
+    een lijst-pipeline krijgt bij eerste gebruik een kopie daarvan als start."""
+    key = (key or "thesis").strip()
+    if not PIPELINE_KEY_RE.match(key):
+        raise ScreeningError(f"Ongeldige pipeline-sleutel: {key!r}")
+    if key == "thesis":
+        return ensure_thesis()
+    THESES_DIR.mkdir(parents=True, exist_ok=True)
+    path = THESES_DIR / f"{key}.yaml"
+    if not path.exists():
+        shutil.copy2(ensure_thesis(), path)
+    return path
 
 
-def save_thesis(raw: dict) -> pipeline_config.Thesis:
-    """Schrijf de thesis atomisch: eerst naar een tijdelijk bestand,
-    valideren met de pipeline-loader, en pas dan de echte vervangen."""
+def load_thesis(key: str = "thesis") -> pipeline_config.Thesis:
+    return pipeline_config.load_thesis(thesis_path_for(key))
+
+
+def save_thesis(raw: dict, key: str = "thesis") -> pipeline_config.Thesis:
+    """Schrijf de criteria van één pipeline atomisch: eerst naar een tijdelijk
+    bestand, valideren met de pipeline-loader, en pas dan vervangen."""
     import yaml
 
-    ensure_thesis()
-    tmp = THESIS_PATH.with_suffix(".tmp")
+    path = thesis_path_for(key)
+    tmp = path.with_suffix(".tmp")
     tmp.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
     try:
         thesis = pipeline_config.load_thesis(tmp)  # ThesisError bij ongeldige invoer
     except pipeline_config.ThesisError:
         tmp.unlink(missing_ok=True)
         raise
-    tmp.replace(THESIS_PATH)
+    tmp.replace(path)
     return thesis
 
 
@@ -359,8 +379,8 @@ def run_pipeline_bg(list_id: int | None = None) -> None:
 
     key = f"list-{list_id}" if list_id else "thesis"
     try:
-        set_status("bezig: thesis laden ...")
-        thesis = load_thesis()
+        set_status("bezig: criteria van deze pipeline laden ...")
+        thesis = load_thesis(key)
 
         universe_override = None
         pipeline_name = thesis.name

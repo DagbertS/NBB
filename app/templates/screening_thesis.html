@@ -1,12 +1,36 @@
 {% extends "base.html" %}
 {% block title %}Thesis — NBB M&A Screening{% endblock %}
 {% block content %}
-<h1>Thesis — zoekcriteria</h1>
+<h1>Zoek- en scorecriteria</h1>
 <p><a href="/screening">&larr; terug naar screening</a></p>
 
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
+<div class="card">
+  <form method="get" action="/screening/thesis"
+        style="display:flex; gap:0.5rem; align-items:end; flex-wrap:wrap">
+    <div style="flex:1; min-width:260px">
+      <label>Criteria van welke pipeline?</label>
+      <select name="pipeline" onchange="this.form.submit()">
+        {% for opt in pipeline_options %}
+        <option value="{{ opt.key }}" {% if pipeline == opt.key %}selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+  {% if pipeline != 'thesis' %}
+  <p class="muted" style="margin-top:0.5rem">
+    Bij een longlist-pipeline bepaalt de <strong>lijst zelf</strong> welke
+    bedrijven meedoen — de NACE-codes en provincies hieronder dienen dan als
+    documentatie. De groottevork, platform/bolt-on-grenzen en scoregewichten
+    sturen wél de scoring van deze pipeline. Nieuwe lijst-criteria starten als
+    kopie van de standaard-thesis.
+  </p>
+  {% endif %}
+</div>
+
 <form method="post" action="/screening/thesis" class="card">
+  <input type="hidden" name="pipeline" value="{{ pipeline }}">
   <label>Naam van het dossier *</label>
   <input type="text" name="name" value="{{ raw.get('name', '') }}" required>
 

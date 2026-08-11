@@ -210,16 +210,32 @@ def upload_manual_signals(
                             "{result} handmatige signalen geregistreerd")
 
 
-# ── thesis-editor ────────────────────────────────────────────────────────────
+# ── criteria-editor (per pipeline) ───────────────────────────────────────────
+
+def _pipeline_options(db: Session) -> list[dict]:
+    from ..models import CompanyList
+
+    options = [{"key": "thesis", "label": "Thesis-criteria (standaard)"}]
+    for company_list in db.query(CompanyList).order_by(CompanyList.name).all():
+        options.append({"key": f"list-{company_list.id}",
+                        "label": f"Longlist: {company_list.name}"})
+    return options
+
 
 @router.get("/thesis")
-def thesis_form(request: Request, user: User = Depends(require_admin)):
+def thesis_form(request: Request, pipeline: str = "thesis",
+                user: User = Depends(require_admin),
+                db: Session = Depends(get_db)):
     import yaml
 
-    raw = yaml.safe_load(screening.ensure_thesis().read_text()) or {}
+    try:
+        raw = yaml.safe_load(screening.thesis_path_for(pipeline).read_text()) or {}
+    except screening.ScreeningError:
+        return RedirectResponse("/screening/thesis", status_code=303)
     return templates.TemplateResponse(
         request, "screening_thesis.html",
-        {"user": user, "raw": raw,
+        {"user": user, "raw": raw, "pipeline": pipeline,
+         "pipeline_options": _pipeline_options(db),
          "provinces": sorted(screening.pipeline_config.VALID_PROVINCES),
          "error": ""},
     )
@@ -232,6 +248,7 @@ async def thesis_save(
     db: Session = Depends(get_db),
 ):
     form = await request.form()
+    pipeline = str(form.get("pipeline", "thesis")) or "thesis"
 
     def _num(name: str) -> float | None:
         value = str(form.get(name, "")).strip().replace(",", ".")
@@ -262,15 +279,17 @@ async def thesis_save(
         },
     }
     try:
-        thesis = screening.save_thesis(raw)
-    except (screening.pipeline_config.ThesisError, ValueError) as exc:
+        thesis = screening.save_thesis(raw, key=pipeline)
+    except (screening.ScreeningError, screening.pipeline_config.ThesisError,
+            ValueError) as exc:
         return templates.TemplateResponse(
             request, "screening_thesis.html",
-            {"user": user, "raw": raw,
+            {"user": user, "raw": raw, "pipeline": pipeline,
+             "pipeline_options": _pipeline_options(db),
              "provinces": sorted(screening.pipeline_config.VALID_PROVINCES),
              "error": str(exc)},
         )
-    log_action(db, user.id, "screening_thesis_saved", thesis.name)
+    log_action(db, user.id, "screening_thesis_saved", f"{pipeline}: {thesis.name}")
     return RedirectResponse("/screening", status_code=303)
 
 
