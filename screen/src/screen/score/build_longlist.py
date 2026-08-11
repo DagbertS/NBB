@@ -154,7 +154,11 @@ def build_longlist(thesis: Thesis, progress=print) -> LonglistResult:
         progress("  lege universe — geen longlist")
         return result
 
-    df = pl.DataFrame(rows).sort("score_total", descending=True, nulls_last=True)
+    # infer_schema_length=None: kolomtypes uit ÁLLE rijen afleiden — de eerste
+    # honderden bedrijven hebben vaak geen cijfers (null), waarna de eerste
+    # echte waarde anders een ComputeError geeft
+    df = pl.DataFrame(rows, infer_schema_length=None) \
+        .sort("score_total", descending=True, nulls_last=True)
     MARTS_DIR.mkdir(parents=True, exist_ok=True)
     df.write_parquet(LONGLIST_PATH)
     result.longlist_path = LONGLIST_PATH

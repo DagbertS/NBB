@@ -163,3 +163,44 @@ def test_report_unknown_enterprise(marts):
     mods["build_longlist"].build_longlist(thesis, progress=lambda *_: None)
     with pytest.raises(mods["onepager"].ReportError, match="niet in de longlist"):
         mods["onepager"].generate_report("9999999999")
+
+
+def test_longlist_schema_inference_with_late_first_values(data_root):
+    """Productie-regressie: honderden bedrijven zonder cijfers gevolgd door
+    één mét — Polars mag de kolomtypes dan niet uit alleen de eerste 100
+    rijen afleiden (gaf ComputeError op fiscal_year=2025)."""
+    import importlib
+
+    import polars as pl
+
+    import screen.config as config
+    importlib.reload(config)
+    import screen.score.build_longlist as ll
+    importlib.reload(ll)
+
+    n = 150
+    numbers = [f"04{i:08d}" for i in range(n)]
+    config.INTERIM_DIR.mkdir(parents=True, exist_ok=True)
+    pl.DataFrame({
+        "enterprise_number": numbers,
+        "name": [f"bedrijf {i}" for i in range(n)],
+        "nace_effective": ["37000"] * n,
+        "province": ["Antwerpen"] * n,
+        "nace_conversion_ambiguous": [None] * n,
+        "override_included": [None] * n,
+    }).write_parquet(config.INTERIM_DIR / "universe.parquet")
+    pl.DataFrame([{
+        "enterprise_number": numbers[-1], "fiscal_year": 2025,
+        "schema_type": "verkort", "revenue": None, "revenue_source": None,
+        "ebitda_proxy": 862444.0, "equity": 1915824.0,
+        "balance_total": 4399687.0, "net_financial_debt": -337462.0,
+        "fte": 15.1,
+    }]).write_parquet(config.INTERIM_DIR / "metrics.parquet")
+
+    thesis = config.Thesis(name="t", nace_codes=["37"])
+    result = ll.build_longlist(thesis, progress=lambda *_: None)
+    assert result.row_count == n
+    df = pl.read_parquet(result.longlist_path)
+    hit = df.filter(pl.col("enterprise_number") == numbers[-1])
+    assert hit["fiscal_year"][0] == 2025
+    assert hit["equity"][0] == 1915824.0

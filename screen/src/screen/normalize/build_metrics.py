@@ -111,7 +111,9 @@ def build_metrics(facts_path: Path | None = None,
         if row.get("revenue_source") == "estimate":
             result.estimated_revenue_count += 1
 
-    df = pl.DataFrame(rows)
+    # alle rijen scannen voor de kolomtypes: metrics zijn vaak null voor de
+    # eerste bedrijven, en een latere echte waarde mag geen ComputeError geven
+    df = pl.DataFrame(rows, infer_schema_length=None)
     INTERIM_DIR.mkdir(parents=True, exist_ok=True)
     df.write_parquet(METRICS_PATH)
     result.metrics_path = METRICS_PATH
