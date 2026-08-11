@@ -23,7 +23,9 @@
         {% set n = nbb_counts.get(item.id, 0) %}
         {% if n %}
           <a href="/companies/{{ item.enterprise_number }}"><span class="badge ok">{{ n }} opgehaald</span></a>
-        {% elif item.nbb_status == 'error' %}<span class="badge err">fout bij ophalen</span>
+        {% elif item.nbb_status == 'error' %}
+          <span class="badge err" title="{{ item.nbb_error }}">fout bij ophalen</span>
+          {% if item.nbb_error %}<br><span class="muted" style="font-size:0.78rem">{{ item.nbb_error[:120] }}</span>{% endif %}
         {% elif item.nbb_status == 'none' %}<span class="badge">geen neerleggingen</span>
         {% else %}<span class="badge">nog niet opgehaald</span>{% endif %}
       </td>

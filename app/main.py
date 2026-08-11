@@ -47,6 +47,12 @@ def _migrate() -> None:
             conn.execute(text("ALTER TABLE screening_pipelines "
                               "ADD COLUMN thesis_name VARCHAR(120) DEFAULT ''"))
             conn.commit()
+        cols = [row[1] for row in
+                conn.execute(text("PRAGMA table_info(company_list_items)"))]
+        if cols and "nbb_error" not in cols:
+            conn.execute(text("ALTER TABLE company_list_items "
+                              "ADD COLUMN nbb_error TEXT DEFAULT ''"))
+            conn.commit()
 
 
 @asynccontextmanager

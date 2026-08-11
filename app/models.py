@@ -60,6 +60,7 @@ class CompanyListItem(Base):
     municipality: Mapped[str] = mapped_column(String(100), default="")
     nace_code: Mapped[str] = mapped_column(String(10), default="")
     nbb_status: Mapped[str] = mapped_column(String(20), default="pending")  # pending|fetched|error|none
+    nbb_error: Mapped[str] = mapped_column(Text, default="")  # laatste foutreden bij ophalen
     nbb_fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     company_list: Mapped["CompanyList"] = relationship(back_populates="items")

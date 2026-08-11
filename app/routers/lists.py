@@ -72,9 +72,17 @@ def list_detail(
 
 
 def _fetch_list_from_nbb(list_id: int) -> None:
-    """Achtergrondtaak: haal voor elk bedrijf in de lijst de NBB-documenten op."""
+    """Achtergrondtaak: haal voor elk bedrijf in de lijst de NBB-documenten
+    op. Rustig tempo (throttle) en één herkansing bij een tijdslimiet-fout
+    (HTTP 429); de foutreden wordt per bedrijf bewaard en getoond."""
+    import logging
+    import time
+
+    import httpx
+
     from ..services.cbso_client import fetch_and_store
 
+    log = logging.getLogger(__name__)
     db = SessionLocal()
     try:
         items = (
@@ -86,13 +94,30 @@ def _fetch_list_from_nbb(list_id: int) -> None:
             .all()
         )
         for item in items:
-            try:
-                deposits = fetch_and_store(db, item.enterprise_number)
-                item.nbb_status = "fetched" if deposits else "none"
-            except Exception:
-                item.nbb_status = "error"
+            for attempt in (1, 2):
+                try:
+                    deposits = fetch_and_store(db, item.enterprise_number)
+                    item.nbb_status = "fetched" if deposits else "none"
+                    item.nbb_error = ""
+                    break
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code
+                    if status == 429 and attempt == 1:
+                        time.sleep(30)   # NBB-tempolimiet: even wachten en opnieuw
+                        continue
+                    body = " ".join(exc.response.text[:200].split())
+                    item.nbb_status = "error"
+                    item.nbb_error = f"HTTP {status} van de NBB" + \
+                        (f" — {body}" if body else "")
+                except Exception as exc:
+                    item.nbb_status = "error"
+                    item.nbb_error = f"{type(exc).__name__}: {exc}"[:300]
+                log.warning("NBB-ophaling %s: %s", item.enterprise_number,
+                            item.nbb_error)
+                break
             item.nbb_fetched_at = datetime.utcnow()
             db.commit()
+            time.sleep(1.0)   # rustig tempo richting de NBB-API
     finally:
         db.close()
 
