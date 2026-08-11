@@ -74,6 +74,27 @@ def get_accounting_data(reference: str) -> dict | bytes:
         return resp.content
 
 
+def probe_accounting_data(reference: str) -> str:
+    """Diagnose: wat antwoordt de API letterlijk op een JSON-XBRL-vraag voor
+    deze referentie? Gebruikt om in het rapport te tonen waarom een
+    neerlegging alleen als PDF binnenkwam."""
+    url = f"{NBB_CBSO_BASE_URL}/deposit/{reference}/accountingData"
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(url, headers=_headers("application/x.jsonxbrl"))
+        content_type = resp.headers.get("content-type", "?")
+        detail = f"HTTP {resp.status_code}, content-type {content_type}"
+        if resp.status_code != 200:
+            snippet = " ".join(resp.text[:200].split())
+            if snippet:
+                detail += f" — antwoord: {snippet}"
+        return detail
+    except CbsoError as exc:
+        return f"geen key: {exc}"
+    except Exception as exc:
+        return f"probe mislukt: {type(exc).__name__}: {exc}"
+
+
 def fetch_and_store(db: Session, enterprise_number: str) -> list[NbbDeposit]:
     """Haal alle neerleggingen van een onderneming op en sla ze lokaal op.
 

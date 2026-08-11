@@ -461,7 +461,8 @@ def _company_metrics(num: str):
 
 
 def individual_markdown(enterprise_number: str, deposits: list[dict] | None = None,
-                        skipped: list[tuple[str, str]] | None = None) -> str:
+                        skipped: list[tuple[str, str]] | None = None,
+                        api_note: str = "") -> str:
     """Individuele analyse van één bedrijf tegen zijn eigen gepubliceerde
     cijfers: identiteit, databasis (welke neerleggingen, wat parste wel/niet),
     kerncijfers per boekjaar, afgeleide ratio's en neerleggingsgedrag.
@@ -509,9 +510,12 @@ def individual_markdown(enterprise_number: str, deposits: list[dict] | None = No
         pdf_only = all(d["data_format"] != "JSON" for d in deposits)
         if pdf_only:
             add("> ⚠ Geen enkele neerlegging is als gestructureerde data (JSON) "
-                "beschikbaar — alleen PDF. Cijfers kunnen dan niet automatisch "
-                "gelezen worden; de PDF's zijn wel te downloaden op de "
-                "bedrijfsfiche.")
+                "beschikbaar — alleen PDF. Automatisch berekende kerncijfers "
+                "ontbreken dan; de AI-cijferanalyse hieronder leest de "
+                "officiële PDF's zelf.")
+            add("")
+        if api_note:
+            add(f"> Technische diagnose (JSON-vraag aan de NBB-API): {api_note}")
             add("")
     elif deposits is not None:
         add("_Geen neerleggingen gevonden bij de NBB voor dit nummer._")
@@ -642,10 +646,48 @@ def individual_markdown(enterprise_number: str, deposits: list[dict] | None = No
     return "\n".join(lines)
 
 
-def ai_commentary(markdown_report: str, company_name: str) -> str | None:
-    """Optionele AI-interpretatie: Claude leest uitsluitend de berekende
-    cijfers hierboven en schrijft er een analistencommentaar bij. Faalt stil
-    (None) zonder key of bij een API-fout — de feiten staan er dan nog steeds."""
+MAX_AI_PDFS = 3
+MAX_AI_PDF_BYTES = 8 * 1024 * 1024   # per bestand; totaalrequest moet < 32 MB blijven
+
+SYSTEM_PROMPT_BASE = (
+    "Je bent een senior M&A-analist. Je krijgt een feitenrapport over één "
+    "Belgisch bedrijf (KBO-identiteit, jaarrekeningcijfers, ratio's, "
+    "neerleggingsgedrag). Schrijf in het Nederlands een beknopt commentaar "
+    "met exact deze koppen (##): Financiële beoordeling, Sterktes, "
+    "Aandachtspunten en risico's, Conclusie vanuit overnameperspectief. "
+    "Baseer je uitsluitend op de aangeleverde informatie; verzin niets bij. "
+    "Benoem expliciet welke informatie ontbreekt en wat als schatting "
+    "gemarkeerd staat. Wees concreet en zakelijk, geen holle frasen."
+)
+
+SYSTEM_PROMPT_PDF = (
+    "Je bent een senior M&A-analist. Je krijgt (1) een feitenrapport over één "
+    "Belgisch bedrijf en (2) de officiële jaarrekening-PDF's zoals neergelegd "
+    "bij de Nationale Bank van België. De cijfers konden niet automatisch "
+    "gelezen worden, dus JIJ leest ze uit de PDF's.\n"
+    "Schrijf in het Nederlands en begin met de kop '## Kerncijfers uit de "
+    "jaarrekeningen (gelezen uit de officiële PDF's)': een markdown-tabel per "
+    "boekjaar met minstens omzet of brutomarge (rubriek 70 of 9900), "
+    "bedrijfswinst/EBIT (9901), afschrijvingen (630), eigen vermogen (10/15), "
+    "balanstotaal, financiële schulden, personeelsbestand (VTE) en "
+    "personeelskosten (62) — voor zover ze in de PDF's staan; noteer '—' wat "
+    "ontbreekt en vermeld bij elke tabel de referentie van de neerlegging. "
+    "Reken daarna zelf de ratio's uit (EBITDA-benadering, marges, "
+    "solvabiliteit, netto schuld) en toon de berekening kort.\n"
+    "Daarna exact deze koppen (##): Financiële beoordeling, Sterktes, "
+    "Aandachtspunten en risico's, Conclusie vanuit overnameperspectief. "
+    "Baseer je uitsluitend op de PDF's en het feitenrapport; verzin geen "
+    "cijfers. Wees concreet en zakelijk."
+)
+
+
+def ai_commentary(markdown_report: str, company_name: str,
+                  pdf_paths: list[Path] | None = None) -> str | None:
+    """AI-interpretatie: Claude leest het feitenrapport en — wanneer er geen
+    machineleesbare cijfers zijn — de officiële jaarrekening-PDF's zelf.
+    Faalt stil (None) zonder key of bij een API-fout; de feiten blijven staan."""
+    import base64
+
     from ..config import ANTHROPIC_API_KEY
 
     if not ANTHROPIC_API_KEY:
@@ -653,24 +695,40 @@ def ai_commentary(markdown_report: str, company_name: str) -> str | None:
     try:
         import anthropic
 
+        content: list[dict] = []
+        used_pdfs = 0
+        for path in (pdf_paths or [])[:MAX_AI_PDFS]:
+            try:
+                data = path.read_bytes()
+            except OSError:
+                continue
+            if len(data) > MAX_AI_PDF_BYTES:
+                continue
+            content.append({
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": base64.standard_b64encode(data).decode(),
+                },
+                "title": path.stem,
+            })
+            used_pdfs += 1
+        content.append({
+            "type": "text",
+            "text": f"Feitenrapport voor {company_name}:\n\n{markdown_report}",
+        })
+
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        message = client.messages.create(
+        with client.messages.stream(
             model="claude-opus-5",
-            max_tokens=2500,
-            system=(
-                "Je bent een senior M&A-analist. Je krijgt een feitenrapport "
-                "over één Belgisch bedrijf (KBO-identiteit, jaarrekeningcijfers, "
-                "ratio's, neerleggingsgedrag). Schrijf in het Nederlands een "
-                "beknopt commentaar met exact deze koppen (##): Financiële "
-                "beoordeling, Sterktes, Aandachtspunten en risico's, Conclusie "
-                "vanuit overnameperspectief. Baseer je UITSLUITEND op de "
-                "aangeleverde cijfers; verzin niets bij. Benoem expliciet welke "
-                "informatie ontbreekt en wat als schatting gemarkeerd staat. "
-                "Wees concreet en zakelijk, geen holle frasen."
-            ),
-            messages=[{"role": "user", "content":
-                       f"Feitenrapport voor {company_name}:\n\n{markdown_report}"}],
-        )
+            max_tokens=8000,
+            system=SYSTEM_PROMPT_PDF if used_pdfs else SYSTEM_PROMPT_BASE,
+            messages=[{"role": "user", "content": content}],
+        ) as stream:
+            message = stream.get_final_message()
+        if message.stop_reason == "refusal":
+            return None
         text = "".join(b.text for b in message.content if b.type == "text").strip()
         return text or None
     except Exception:
@@ -738,19 +796,53 @@ def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> 
                 manual = MANUAL_SIGNALS_PATH if MANUAL_SIGNALS_PATH.exists() else None
                 sig.build_signals(manual_path=manual, progress=lambda *_: None)
 
+            # Bij alleen-PDF-neerleggingen: (a) vastleggen wat de NBB-API
+            # antwoordt op onze JSON-vraag, (b) de PDF's aan de AI meegeven
+            # zodat de cijfers alsnog gelezen worden.
+            api_note = ""
+            pdf_paths: list[Path] = []
+            has_metrics = not _company_metrics(num).is_empty()
+            json_deposits = [d for d in deposit_rows if d.data_format == "JSON"]
+            if deposit_rows and not json_deposits:
+                from .cbso_client import probe_accounting_data
+
+                api_note = probe_accounting_data(deposit_rows[0].reference)
+            if not has_metrics:
+                pdf_paths = [
+                    Path(d.file_path) for d in deposit_rows
+                    if d.file_path and d.file_path.lower().endswith(".pdf")
+                    and Path(d.file_path).exists()
+                ][:MAX_AI_PDFS]
+
             _set_individual_status(f"bezig: {num} — rapport opstellen ...")
-            report = individual_markdown(num, deposits=deposits, skipped=skipped)
+            report = individual_markdown(num, deposits=deposits, skipped=skipped,
+                                         api_note=api_note)
             if note:
                 report += f"\n\n> ⚠ {note}\n"
 
             identity = _identity_from_kbo(num)
             name = identity.get("name", "")
-            _set_individual_status(f"bezig: {num} — AI-interpretatie schrijven ...")
-            commentary = ai_commentary(report, name or num)
+            if pdf_paths:
+                _set_individual_status(
+                    f"bezig: {num} — AI leest {len(pdf_paths)} jaarrekening-PDF('s) ..."
+                )
+            else:
+                _set_individual_status(f"bezig: {num} — AI-interpretatie schrijven ...")
+            commentary = ai_commentary(report, name or num, pdf_paths=pdf_paths)
             if commentary:
-                report += ("\n\n# Interpretatie (AI-analist)\n\n"
-                           "> Automatisch commentaar, uitsluitend gebaseerd op de "
-                           "cijfers hierboven — geen vervanging van due diligence.\n\n"
+                if pdf_paths:
+                    disclaimer = (
+                        f"> Cijfers hieronder zijn door AI gelezen uit {len(pdf_paths)} "
+                        "officiële NBB-jaarrekening-PDF('s) — niet machine-gevalideerd; "
+                        "verifieer sleutelcijfers in de originele PDF (te downloaden op "
+                        "de bedrijfsfiche). Geen vervanging van due diligence.\n\n"
+                    )
+                else:
+                    disclaimer = (
+                        "> Automatisch commentaar, uitsluitend gebaseerd op de "
+                        "cijfers hierboven — geen vervanging van due diligence.\n\n"
+                    )
+                report += ("\n\n# Interpretatie (AI-analist)\n\n" + disclaimer
                            + commentary + "\n")
             save_analysis(db, num, name, "individueel", report, user_id)
         finally:
