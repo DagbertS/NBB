@@ -34,9 +34,13 @@ de screening-pipeline en de individuele screenings.</p>
       {% if status.manual_signals %}<span class="badge ok">geladen</span>
       {% else %}<span class="badge">geen (optioneel)</span>{% endif %}
     </li>
-    <li>NBB CBSO-koppeling (jaarrekeningen ophalen):
+    <li>NBB CBSO — jaarrekeningen raadplegen ("Authentic Data"):
       {% if has_cbso_key %}<span class="badge ok">key ingesteld</span>
       {% else %}<span class="badge err">geen key — stel NBB_CBSO_SUBSCRIPTION_KEY in bij de omgevingsvariabelen</span>{% endif %}
+    </li>
+    <li>NBB CBSO — daily extract ("Extracts"):
+      {% if has_extract_key %}<span class="badge ok">key ingesteld</span>
+      {% else %}<span class="badge err">geen key — stel NBB_CBSO_EXTRACT_KEY in</span>{% endif %}
     </li>
     <li>KBO Open Data-login (maandelijkse updates):
       {% if has_kbo_login %}<span class="badge ok">ingesteld</span>

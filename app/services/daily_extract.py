@@ -16,7 +16,7 @@ from pathlib import Path
 import httpx
 from sqlalchemy.orm import Session
 
-from ..config import DOCUMENT_STORE, NBB_CBSO_BASE_URL, NBB_CBSO_SUBSCRIPTION_KEY
+from ..config import DOCUMENT_STORE, NBB_CBSO_BASE_URL, NBB_CBSO_EXTRACT_KEY
 from ..models import NbbDeposit, Setting
 
 log = logging.getLogger(__name__)
@@ -26,15 +26,15 @@ EXTRACT_BASE_URL = NBB_CBSO_BASE_URL.replace("/authentic", "/extract")
 
 def _headers() -> dict:
     return {
-        "NBB-CBSO-Subscription-Key": NBB_CBSO_SUBSCRIPTION_KEY,
+        "NBB-CBSO-Subscription-Key": NBB_CBSO_EXTRACT_KEY,
         "X-Request-Id": str(uuid.uuid4()),
     }
 
 
 def download_daily_extract(extract_date: date) -> Path | None:
     """Download de daily-extract-zip voor een datum. None als (nog) niet beschikbaar."""
-    if not NBB_CBSO_SUBSCRIPTION_KEY:
-        log.warning("Geen NBB_CBSO_SUBSCRIPTION_KEY — daily extract overgeslagen")
+    if not NBB_CBSO_EXTRACT_KEY:
+        log.warning("Geen NBB_CBSO_EXTRACT_KEY/SUBSCRIPTION_KEY — daily extract overgeslagen")
         return None
     target_dir = Path(DOCUMENT_STORE) / "daily"
     target_dir.mkdir(parents=True, exist_ok=True)

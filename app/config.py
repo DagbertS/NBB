@@ -21,7 +21,13 @@ KBO_USERNAME = _env("KBO_USERNAME")
 KBO_PASSWORD = _env("KBO_PASSWORD")
 KBO_OPEN_DATA_URL = "https://kbopub.economie.fgov.be/kbo-open-data"
 
+# De NBB geeft per product een eigen subscription key:
+# - NBB_CBSO_SUBSCRIPTION_KEY: product "Authentic Data" (jaarrekeningen per
+#   bedrijf raadplegen — individuele screenings en pipeline)
+# - NBB_CBSO_EXTRACT_KEY: product "Extracts" (Authentic Data Daily Extract —
+#   de dagelijkse stroom nieuwe neerleggingen); valt terug op de eerste key
 NBB_CBSO_SUBSCRIPTION_KEY = _env("NBB_CBSO_SUBSCRIPTION_KEY")
+NBB_CBSO_EXTRACT_KEY = _env("NBB_CBSO_EXTRACT_KEY") or NBB_CBSO_SUBSCRIPTION_KEY
 NBB_CBSO_BASE_URL = _env("NBB_CBSO_BASE_URL", "https://ws.cbso.nbb.be/authentic")
 
 ANTHROPIC_API_KEY = _env("ANTHROPIC_API_KEY")
