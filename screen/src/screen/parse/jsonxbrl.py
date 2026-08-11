@@ -13,8 +13,12 @@ nooit — die ontstaan pas in normalize (fase 3) en krijgen source='derived'.
 """
 
 import json
+import re
 from datetime import date
 from pathlib import Path
+
+# verrijkte pipeline-kopieën heten <ondernemingsnummer>_<referentie>.json
+FILENAME_NUMBER_RE = re.compile(r"^(\d{10})_")
 
 
 class ParseError(Exception):
@@ -40,8 +44,14 @@ def normalize_enterprise_number(value: str) -> str:
 
 
 def _fiscal_year(exercise_dates: dict, context: str) -> int:
-    end = _get(exercise_dates or {}, "EndDate", required=True,
-               context=f"(ExerciseDates, {context})")
+    end = _get(exercise_dates or {}, "EndDate")
+    if end is None:
+        raise ParseError(
+            f"Boekjaar onbekend {context}: ExerciseDates/EndDate ontbreekt. Het "
+            "echte CBSO-bestand bevat die metadata niet zelf — de webapp voegt "
+            "ze toe bij het kopiëren; haal de neerleggingen opnieuw op via "
+            "'Individuele screening' of 'Ophalen bij NBB'."
+        )
     return date.fromisoformat(str(end)[:10]).year
 
 
@@ -57,6 +67,9 @@ def _structure_sketch(doc, depth: int = 0) -> str:
     if not isinstance(doc, dict):
         return type(doc).__name__
     parts = [f"velden: {list(doc.keys())[:10]}"]
+    rubrics = _get(doc, "Rubrics")
+    if isinstance(rubrics, list) and rubrics and isinstance(rubrics[0], dict):
+        parts.append(f"voorbeeldrubriek: {list(rubrics[0].keys())[:8]}")
     facts = doc.get("facts")
     if isinstance(facts, dict) and facts and depth < 2:
         first = next(iter(facts.values()))
@@ -72,18 +85,29 @@ def _structure_sketch(doc, depth: int = 0) -> str:
     return "; ".join(parts)
 
 
+def _candidates(doc) -> list[dict]:
+    out = [doc] if isinstance(doc, dict) else []
+    if isinstance(doc, list):
+        out = [el for el in doc if isinstance(el, dict)]
+    elif isinstance(doc, dict):
+        out += [v for v in doc.values() if isinstance(v, dict)]
+        out += [el for v in doc.values() if isinstance(v, list)
+                for el in v if isinstance(el, dict)]
+    return out
+
+
 def _locate_body(doc):
     """Vind het object met de neerleggingsvelden: bovenaan, in een lijst of
-    één niveau dieper ingepakt (bv. onder 'Content' of 'Deposit')."""
-    candidates = [doc]
-    if isinstance(doc, list):
-        candidates = [el for el in doc if isinstance(el, dict)]
-    elif isinstance(doc, dict):
-        candidates += [v for v in doc.values() if isinstance(v, dict)]
-        candidates += [el for v in doc.values() if isinstance(v, list)
-                       for el in v if isinstance(el, dict)]
+    één niveau dieper ingepakt. Het echte CBSO-formaat (live vastgesteld
+    2026-08-11) bevat GEEN EnterpriseNumber — dan is het object met de
+    Rubrics-lijst het document en komt de identificatie uit de bestandsnaam
+    of uit de metadata-verrijking bij het kopiëren."""
+    candidates = _candidates(doc)
     for cand in candidates:
-        if isinstance(cand, dict) and _get(cand, "EnterpriseNumber") is not None:
+        if _get(cand, "EnterpriseNumber") is not None:
+            return cand
+    for cand in candidates:
+        if _get(cand, "Rubrics") is not None:
             return cand
     return None
 
@@ -99,15 +123,24 @@ def parse_deposit(path: str | Path) -> list[dict]:
     doc = _locate_body(raw)
     if doc is None:
         raise ParseError(
-            f"{path.name}: onbekend formaat — geen EnterpriseNumber gevonden. "
-            f"Werkelijke structuur: {_structure_sketch(raw)}"
+            f"{path.name}: onbekend formaat — geen EnterpriseNumber of Rubrics "
+            f"gevonden. Werkelijke structuur: {_structure_sketch(raw)}"
         )
 
     ctx = f"in {path.name}"
-    enterprise = normalize_enterprise_number(
-        _get(doc, "EnterpriseNumber", required=True, context=ctx)
-    )
-    reference = str(_get(doc, "ReferenceNumber", "Reference", required=True, context=ctx))
+    number_raw = _get(doc, "EnterpriseNumber")
+    if number_raw is None:
+        match = FILENAME_NUMBER_RE.match(path.name)
+        if not match:
+            raise ParseError(
+                f"{path.name}: geen EnterpriseNumber in het bestand en geen "
+                "nummer in de bestandsnaam — kopieer de neerlegging als "
+                "<ondernemingsnummer>_<referentie>.json of gebruik de "
+                "metadata-verrijking van de webapp"
+            )
+        number_raw = match.group(1)
+    enterprise = normalize_enterprise_number(number_raw)
+    reference = str(_get(doc, "ReferenceNumber", "Reference", default=path.stem))
     deposit_date = str(_get(doc, "DepositDate", default=""))[:10]
     model = str(_get(doc, "ModelType", "Model", default="unknown"))
     schema_type = classify_schema(model)
@@ -117,10 +150,20 @@ def parse_deposit(path: str | Path) -> list[dict]:
     exercise_end = str(_get(exercise_dates, "EndDate", default=""))[:10]
 
     rubrics = _get(doc, "Rubrics", "rubrics", default=[])
+    if isinstance(rubrics, dict):
+        rubrics = list(rubrics.values())
     rows: list[dict] = []
     for i, rubric in enumerate(rubrics):
-        code = _get(rubric, "Code", required=True, context=f"(rubriek {i} {ctx})")
-        raw_value = _get(rubric, "Value", required=True, context=f"(rubriek {code} {ctx})")
+        if not isinstance(rubric, dict):
+            raise ParseError(f"Rubriek {i} {ctx} is geen object: {rubric!r}")
+        code = _get(rubric, "Code", "RubricCode")
+        if code is None:
+            raise ParseError(
+                f"Rubriek {i} {ctx}: geen Code-veld — werkelijke rubriekvelden: "
+                f"{list(rubric.keys())[:8]}"
+            )
+        raw_value = _get(rubric, "Value", "Amount",
+                         required=True, context=f"(rubriek {code} {ctx})")
         try:
             value = float(raw_value)
         except (TypeError, ValueError) as exc:

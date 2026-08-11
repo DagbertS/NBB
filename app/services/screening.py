@@ -393,26 +393,56 @@ def get_individual_status() -> str:
         return ""
 
 
-def sync_deposits_to_pipeline(enterprise_number: str) -> int:
-    """Kopieer de CBSO-JSON-neerleggingen die de webapp voor dit bedrijf
-    ophaalde (DOCUMENT_STORE) naar de pipeline-datamap (raw/nbb), zodat één
-    opgehaald bestand overal in de applicatie bruikbaar is."""
-    from ..config import DOCUMENT_STORE
+def sync_deposits_to_pipeline(enterprise_number: str, deposit_rows: list) -> int:
+    """Kopieer de CBSO-JSON-neerleggingen naar de pipeline-datamap (raw/nbb),
+    verrijkt met de metadata uit de referentielijst. Nodig omdat het echte
+    CBSO-bestand (live vastgesteld 2026-08-11) zelf géén ondernemingsnummer,
+    boekjaar of model bevat — die kennis zit in de nbb_deposits-tabel."""
+    import json as _json
 
     num = normalize_number(enterprise_number)
-    src_dir = Path(DOCUMENT_STORE) / num
-    if not src_dir.exists():
-        return 0
     nbb_raw = pipeline_config.RAW_DIR / "nbb"
     nbb_raw.mkdir(parents=True, exist_ok=True)
     n = 0
-    for src in src_dir.glob("*.json"):
-        target = nbb_raw / src.name
-        if not target.exists():
-            try:
-                os.link(src, target)
-            except OSError:
-                shutil.copy2(src, target)
+    for d in deposit_rows:
+        if not d.file_path or not d.file_path.lower().endswith(".json"):
+            continue
+        src = Path(d.file_path)
+        if not src.exists():
+            continue
+        try:
+            original = _json.loads(src.read_text())
+        except (OSError, _json.JSONDecodeError):
+            continue
+
+        exercise_dates = {"EndDate": d.exercise_end} if d.exercise_end else {}
+        try:  # de referentie-metadata van de NBB bevat vaak de volledige periode
+            ref_info = _json.loads(d.raw_json or "{}")
+            ed = ref_info.get("ExerciseDates") or ref_info.get("exerciseDates")
+            if isinstance(ed, dict) and ed:
+                exercise_dates = ed
+        except _json.JSONDecodeError:
+            pass
+        meta = {
+            "EnterpriseNumber": num,
+            "ReferenceNumber": d.reference,
+            "DepositDate": d.deposit_date or "",
+            "ModelType": d.model_type or "",
+            "ExerciseDates": exercise_dates,
+        }
+        if isinstance(original, dict):
+            merged = {**meta, **original}   # velden uit het bestand zelf winnen
+        elif isinstance(original, list):
+            merged = {**meta, "Rubrics": original}
+        else:
+            continue
+
+        # oude, onverrijkte kopie opruimen zodat de parseerfout verdwijnt
+        stale = nbb_raw / src.name
+        if stale.exists():
+            stale.unlink()
+        target = nbb_raw / f"{num}_{d.reference}.json"
+        target.write_text(_json.dumps(merged, ensure_ascii=False))
         n += 1
     return n
 
@@ -617,6 +647,34 @@ def individual_markdown(enterprise_number: str, deposits: list[dict] | None = No
                     f"{cagr * 100:+.1f}% per jaar (CAGR)**")
                 add("")
 
+        # grafieken uit de gestructureerde cijfers
+        from .charts import grouped_bar_chart, line_chart
+
+        def _col(metric):
+            return [by_year.get(yy, {}).get(metric) for yy in years]
+
+        year_labels = [str(yy) for yy in years]
+        bar_series = [(label, _col(metric)) for metric, label in
+                      (("revenue", "Omzet"), ("ebitda_proxy", "EBITDA-proxy"))
+                      if any(v is not None for v in _col(metric))]
+        line_series = [(label, _col(metric)) for metric, label in
+                       (("equity", "Eigen vermogen"),
+                        ("net_financial_debt", "Netto fin. schuld"))
+                       if any(v is not None for v in _col(metric))]
+        svg_bar = grouped_bar_chart(year_labels, bar_series,
+                                    "Resultaat per boekjaar (EUR)") \
+            if bar_series else ""
+        svg_line = line_chart(year_labels, line_series,
+                              "Balanspositie per boekjaar (EUR)") \
+            if line_series else ""
+        if svg_bar or svg_line:
+            add("## Grafieken")
+            add("")
+            for svg in (svg_bar, svg_line):
+                if svg:
+                    add(svg)
+                    add("")
+
     add("> Peer-vergelijking maakt bewust geen deel uit van een individuele "
         "analyse; kwartielen t.o.v. sectorgenoten vind je in de "
         "screening-longlist van een dossier.")
@@ -682,10 +740,20 @@ SYSTEM_PROMPT_DOCS = (
     "een conceptnaam en een periode; gebruik de rubriekcodes daarin. "
     "Reken daarna zelf de ratio's uit (EBITDA-benadering, marges, "
     "solvabiliteit, netto schuld) en toon de berekening kort.\n"
-    "Daarna exact deze koppen (##): Financiële beoordeling, Sterktes, "
-    "Aandachtspunten en risico's, Conclusie vanuit overnameperspectief. "
-    "Baseer je uitsluitend op de documenten en het feitenrapport; verzin "
-    "geen cijfers. Wees concreet en zakelijk."
+    "Daarna exact deze koppen (##): Financiële beoordeling, Werkkapitaal en "
+    "kasstromen, Sterktes, Aandachtspunten en risico's, Conclusie vanuit "
+    "overnameperspectief. Behandel bij de beoordeling ook de meerjarige "
+    "trend, de kwaliteit van de winst (eenmalige posten, afschrijvingsbeleid) "
+    "en het dividend-/reserveringsbeleid, voor zover afleidbaar. Baseer je "
+    "uitsluitend op de documenten en het feitenrapport; verzin geen cijfers. "
+    "Wees concreet en zakelijk.\n"
+    "Sluit het antwoord af met een machineleesbaar datablok voor grafieken, "
+    "exact in dit formaat (kale getallen, geen duizendtallen-scheiding, één "
+    "rij per boekjaar, '—' voor onbekend):\n"
+    "```chartdata\n"
+    "jaar;omzet_of_brutomarge;ebitda;netto_resultaat;eigen_vermogen\n"
+    "2023;2028889;694662;282642;1397051\n"
+    "```"
 )
 
 MAX_AI_JSON_CHARS = 160_000   # per JSON-neerlegging; ruim genoeg voor m81-modellen
@@ -792,7 +860,7 @@ def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> 
             references = {d.reference for d in deposit_rows}
 
             skipped: list[tuple[str, str]] = []
-            copied = sync_deposits_to_pipeline(num)
+            copied = sync_deposits_to_pipeline(num, deposit_rows)
             if copied:
                 _set_individual_status(f"bezig: {num} — cijfers herberekenen ...")
                 from screen import build as build_mod
@@ -803,7 +871,7 @@ def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> 
                 facts_result = build_mod.build_facts(progress=lambda *_: None)
                 # alleen de parseerfouten van dít bedrijf tonen
                 skipped = [(name, reason) for name, reason in facts_result.skipped
-                           if Path(name).stem in references]
+                           if any(ref in name for ref in references)]
                 ratio, ratio_note = None, ""
                 universe_path = pipeline_config.INTERIM_DIR / "universe.parquet"
                 if universe_path.exists():
@@ -855,6 +923,9 @@ def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> 
                 _set_individual_status(f"bezig: {num} — AI-interpretatie schrijven ...")
             commentary = ai_commentary(report, name or num, doc_paths=doc_paths)
             if commentary:
+                from .charts import expand_chartdata
+
+                commentary = expand_chartdata(commentary)
                 if doc_paths:
                     disclaimer = (
                         f"> Cijfers hieronder zijn door AI gelezen uit {len(doc_paths)} "

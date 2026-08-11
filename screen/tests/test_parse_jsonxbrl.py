@@ -106,3 +106,57 @@ def test_parse_unknown_format_reports_structure(tmp_path):
     msg = str(exc.value)
     assert "Werkelijke structuur" in msg
     assert "documentInfo" in msg and "concept" in msg
+
+
+def _real_cbso_body():
+    """Nagebootst naar de live vastgestelde structuur (2026-08-11):
+    geen EnterpriseNumber/ExerciseDates/ModelType in het bestand zelf."""
+    return {
+        "ReferenceNumber": "2026-00298256",
+        "EnterpriseName": "AQUA JET VLERICK",
+        "Address": {"City": "Nazareth"},
+        "LegalForm": "610",
+        "JointCommittees": [],
+        "Rubrics": [
+            {"Code": "9900", "Period": "N", "Value": "1961298.0"},
+            {"Code": "9901", "Period": "N", "Value": "364440.0"},
+            {"Code": "9900", "Period": "NM1", "Value": "2012785.0"},
+        ],
+        "Administrators": [],
+        "Shareholders": [],
+    }
+
+
+def test_parse_real_cbso_format_enriched(tmp_path):
+    """De webapp verrijkt de kopie met metadata; de parser leest hem dan."""
+    body = {"EnterpriseNumber": "0435808429", "DepositDate": "2026-07-15",
+            "ModelType": "m81-f", "ExerciseDates": {"EndDate": "2025-12-31"},
+            **_real_cbso_body()}
+    p = tmp_path / "0435808429_2026-00298256.json"
+    p.write_text(json.dumps(body))
+    rows = jx.parse_deposit(p)
+    assert len(rows) == 3
+    r = {(row["rubric_code"], row["period"]): row for row in rows}
+    assert r[("9900", "N")]["value"] == 1961298.0
+    assert r[("9900", "N")]["enterprise_number"] == "0435808429"
+    assert r[("9900", "N")]["fiscal_year"] == 2025
+    assert r[("9900", "NM1")]["value"] == 2012785.0
+
+
+def test_parse_real_format_number_from_filename(tmp_path):
+    """Zonder verrijking: nummer uit de bestandsnaam, maar boekjaar blijft
+    verplicht — met een duidelijke uitleg."""
+    p = tmp_path / "0435808429_2026-00298256.json"
+    p.write_text(json.dumps(_real_cbso_body()))
+    with pytest.raises(jx.ParseError, match="ExerciseDates"):
+        jx.parse_deposit(p)
+
+
+def test_parse_rubric_without_code_reports_fields(tmp_path):
+    body = {"EnterpriseNumber": "0435808429",
+            "ExerciseDates": {"EndDate": "2025-12-31"},
+            "Rubrics": [{"Concept": "x", "Amount": "1"}]}
+    p = tmp_path / "d.json"
+    p.write_text(json.dumps(body))
+    with pytest.raises(jx.ParseError, match="werkelijke rubriekvelden"):
+        jx.parse_deposit(p)

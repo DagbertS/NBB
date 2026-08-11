@@ -87,13 +87,17 @@ input[type="file"] { max-width: 100%; font-size: 0.9rem; margin: 0.3rem 0; }
 }
 .report-html table {
   border-collapse: collapse; width: 100%; font-size: 0.88rem; margin: 0.4rem 0 0.8rem;
-  display: block; overflow-x: auto;
+  font-variant-numeric: tabular-nums;
 }
 .report-html th, .report-html td {
   text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border);
-  white-space: nowrap;
+  vertical-align: top;
 }
-.report-html th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
+.report-html td { white-space: normal; overflow-wrap: anywhere; }
+.report-html th { color: var(--muted); font-weight: 600; font-size: 0.78rem;
+  text-transform: uppercase; white-space: nowrap; }
+.report-html td:first-child { font-weight: 500; overflow-wrap: normal; }
+.report-html svg { max-width: 100%; height: auto; display: block; margin: 0.5rem 0 1rem; }
 .report-html blockquote {
   margin: 0.6rem 0; padding: 0.5rem 0.8rem; border-left: 3px solid var(--accent);
   background: rgba(0, 0, 0, 0.03); color: var(--muted); font-size: 0.88rem;

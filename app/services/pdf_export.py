@@ -103,6 +103,8 @@ def markdown_to_pdf(markdown: str, footer_text: str = "") -> bytes:
             continue
         flush_table()
 
+        if line.lstrip().startswith("<"):
+            continue  # rauwe HTML/SVG (grafieken) — alleen in de webweergave
         if not line.strip():
             pdf.ln(2)
         elif line.startswith("# "):
