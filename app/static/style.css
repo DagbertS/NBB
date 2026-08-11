@@ -126,7 +126,12 @@ button:hover, .btn:hover { opacity: 0.9; }
 
 .table-wrap { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { white-space: nowrap; }
+/* lange namen wrappen over meerdere regels i.p.v. de tabel breder dan het
+   scherm te duwen (waardoor kolommen achter een scroll verdwijnen) */
+td { white-space: normal; overflow-wrap: anywhere; max-width: 34rem; }
+td .badge, td .btn { white-space: nowrap; }
 th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
 tr:hover td { background: #f0f4f8; }
 td a { color: var(--primary); }
