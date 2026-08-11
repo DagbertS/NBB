@@ -523,6 +523,23 @@ def run_pipeline_bg(list_id: int | None = None,
                 pipeline_name = company_list.name
                 items = (db.query(CompanyListItem)
                          .filter(CompanyListItem.list_id == list_id).all())
+
+                # alle reeds opgehaalde NBB-documenten van deze lijst verrijkt
+                # klaarzetten voor de parser — zo worden de cijfers machinaal
+                # geparst i.p.v. dat de AI ruwe bestanden moet lezen
+                from ..models import NbbDeposit
+
+                set_status(f"bezig: NBB-documenten van '{pipeline_name}' "
+                           "voorbereiden voor de parser ...")
+                synced = 0
+                for item in items:
+                    num = normalize_number(item.enterprise_number)
+                    rows_ = (db.query(NbbDeposit)
+                             .filter(NbbDeposit.enterprise_number == num).all())
+                    if rows_:
+                        synced += sync_deposits_to_pipeline(num, rows_)
+                if synced:
+                    set_status(f"bezig: {synced} neerlegging(en) klaargezet ...")
             set_status(f"bezig: universe uit longlist '{pipeline_name}' opbouwen ...")
             universe_override = _universe_from_list(items)
 
