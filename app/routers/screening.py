@@ -348,12 +348,29 @@ def longlist(
                                  min_score=min_score_val, sort=sort,
                                  pipeline=pipeline)
     rows, total, pages = [], 0, 1
+    nbb_counts: dict[str, int] = {}
     if df is not None:
         total = len(df)
         pages = max((total + PER_PAGE - 1) // PER_PAGE, 1)
         page = min(max(page, 1), pages)
         offset = (page - 1) * PER_PAGE
-        for i, row in enumerate(df.slice(offset, PER_PAGE).iter_rows(named=True),
+        page_df = df.slice(offset, PER_PAGE)
+
+        # overzicht van bij de NBB opgehaalde documenten, per bedrijf op deze pagina
+        from sqlalchemy import func
+
+        from ..models import NbbDeposit
+
+        numbers = page_df["enterprise_number"].to_list()
+        if numbers:
+            for number, count in (
+                db.query(NbbDeposit.enterprise_number, func.count(NbbDeposit.id))
+                .filter(NbbDeposit.enterprise_number.in_(numbers))
+                .group_by(NbbDeposit.enterprise_number)
+            ):
+                nbb_counts[number] = count
+
+        for i, row in enumerate(page_df.iter_rows(named=True),
                                 start=offset + 1):
             revenue = _fmt(row["revenue"])
             if row.get("revenue_source") == "estimate" and row["revenue"] is not None:
@@ -374,13 +391,17 @@ def longlist(
                            + (row["signals_manual_count"] or 0),
                 "in_size": row["in_size_range"],
                 "ambiguous": row["nace_conversion_ambiguous"],
+                "nbb_count": nbb_counts.get(row["enterprise_number"], 0),
             })
+    list_id = None
+    if pipeline.startswith("list-") and pipeline[5:].isdigit():
+        list_id = int(pipeline[5:])
     return templates.TemplateResponse(
         request, "screening_longlist.html",
         {"user": user, "rows": rows, "built": df is not None, "total": total,
          "page": page, "pages": pages, "q": q, "klasse": klasse,
          "min_score": min_score, "sort": sort, "pipeline": pipeline,
-         "pipelines": screening.list_pipelines(db)},
+         "pipelines": screening.list_pipelines(db), "list_id": list_id},
     )
 
 

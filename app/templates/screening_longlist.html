@@ -54,9 +54,18 @@
 
   <p class="muted" style="margin-top:0.5rem">{{ "{:,}".format(total).replace(",", ".") }} ondernemingen — pagina {{ page }}/{{ pages }}</p>
 
+  {% if list_id %}
+  <form method="post" action="/lists/{{ list_id }}/fetch-nbb" style="margin-bottom:0.6rem"
+        onsubmit="return confirm('NBB-documenten ophalen voor alle bedrijven in deze lijst die nog geen documenten hebben? Dit loopt op de achtergrond, één bedrijf per keer.')">
+    <input type="hidden" name="next" value="/screening/longlist?pipeline={{ pipeline }}">
+    <button class="btn-small">Haal NBB-documenten op voor de hele lijst</button>
+    <span class="muted">herlaad daarna de pagina en draai Build &amp; rank opnieuw voor verse scores</span>
+  </form>
+  {% endif %}
+
   <div class="table-wrap"><table>
-    <tr><th>#</th><th>Score</th><th>Naam</th><th>Nummer</th><th>Klasse</th>
-        <th>Boekjaar</th><th>Omzet</th><th>EBITDA</th><th>VTE</th>
+    <tr><th>#</th><th>Score</th><th>Naam</th><th>Nummer</th><th>NBB-dok.</th>
+        <th>Klasse</th><th>Boekjaar</th><th>Omzet</th><th>EBITDA</th><th>VTE</th>
         <th>Signalen</th><th>Provincie</th><th>NACE</th></tr>
     {% for r in rows %}
     <tr>
@@ -66,6 +75,13 @@
         {% if r.ambiguous %}<span title="NACE-conversie 2008→2025 was 1-op-veel — activiteit verifiëren">⚠</span>{% endif %}
       </td>
       <td>{{ r.number }}</td>
+      <td>
+        {% if r.nbb_count %}
+          <a href="/companies/{{ r.number }}"><span class="badge ok">{{ r.nbb_count }}</span></a>
+        {% else %}
+          <a href="/companies/{{ r.number }}" title="Nog geen NBB-documenten opgehaald"><span class="badge">—</span></a>
+        {% endif %}
+      </td>
       <td>{{ r.klasse }}</td>
       <td>{{ r.year }}</td>
       <td>{{ r.revenue }}</td>

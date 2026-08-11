@@ -58,7 +58,7 @@ def _fetch_list_from_nbb(list_id: int) -> None:
             db.query(CompanyListItem)
             .filter(
                 CompanyListItem.list_id == list_id,
-                CompanyListItem.nbb_status == "pending",
+                CompanyListItem.nbb_status.in_(["pending", "error"]),
             )
             .all()
         )
@@ -75,8 +75,9 @@ def _fetch_list_from_nbb(list_id: int) -> None:
 
 
 @router.post("/lists/{list_id}/fetch-nbb")
-def fetch_nbb(
+async def fetch_nbb(
     list_id: int,
+    request: Request,
     background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -84,7 +85,11 @@ def fetch_nbb(
     _get_list(db, list_id, user)
     background_tasks.add_task(_fetch_list_from_nbb, list_id)
     log_action(db, user.id, "fetch_nbb_list", str(list_id))
-    return RedirectResponse(f"/lists/{list_id}", status_code=303)
+    form = await request.form()
+    next_url = str(form.get("next", ""))
+    if not next_url.startswith("/"):
+        next_url = f"/lists/{list_id}"
+    return RedirectResponse(next_url, status_code=303)
 
 
 @router.post("/lists/{list_id}/delete")
