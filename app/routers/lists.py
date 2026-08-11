@@ -43,8 +43,31 @@ def list_detail(
     db: Session = Depends(get_db),
 ):
     company_list = _get_list(db, list_id, user)
+
+    # werkelijk aantal opgehaalde NBB-documenten per bedrijf (live geteld —
+    # de nbb_status van een item kan achterlopen als documenten via een
+    # individuele screening binnenkwamen)
+    from sqlalchemy import func
+
+    from ..models import NbbDeposit
+
+    def _norm(number: str) -> str:
+        return (number or "").replace(".", "").replace(" ", "")
+
+    numbers = {_norm(item.enterprise_number) for item in company_list.items}
+    counts: dict[str, int] = {}
+    if numbers:
+        for number, count in (
+            db.query(NbbDeposit.enterprise_number, func.count(NbbDeposit.id))
+            .filter(NbbDeposit.enterprise_number.in_(numbers))
+            .group_by(NbbDeposit.enterprise_number)
+        ):
+            counts[number] = count
+    nbb_counts = {item.id: counts.get(_norm(item.enterprise_number), 0)
+                  for item in company_list.items}
     return templates.TemplateResponse(
-        request, "list_detail.html", {"user": user, "l": company_list}
+        request, "list_detail.html",
+        {"user": user, "l": company_list, "nbb_counts": nbb_counts}
     )
 
 

@@ -11,7 +11,7 @@
   </p>
 
   <div class="table-wrap"><table>
-    <tr><th>Nummer</th><th>Naam</th><th>NACE</th><th>Postcode</th><th>Gemeente</th><th>NBB-status</th></tr>
+    <tr><th>Nummer</th><th>Naam</th><th>NACE</th><th>Postcode</th><th>Gemeente</th><th>NBB-documenten</th></tr>
     {% for item in l.items %}
     <tr>
       <td><a href="/companies/{{ item.enterprise_number }}">{{ item.enterprise_number }}</a></td>
@@ -20,10 +20,12 @@
       <td>{{ item.zipcode or "—" }}</td>
       <td>{{ item.municipality or "—" }}</td>
       <td>
-        {% if item.nbb_status == 'fetched' %}<span class="badge ok">opgehaald</span>
-        {% elif item.nbb_status == 'error' %}<span class="badge err">fout</span>
+        {% set n = nbb_counts.get(item.id, 0) %}
+        {% if n %}
+          <a href="/companies/{{ item.enterprise_number }}"><span class="badge ok">{{ n }} opgehaald</span></a>
+        {% elif item.nbb_status == 'error' %}<span class="badge err">fout bij ophalen</span>
         {% elif item.nbb_status == 'none' %}<span class="badge">geen neerleggingen</span>
-        {% else %}<span class="badge">wachtend</span>{% endif %}
+        {% else %}<span class="badge">nog niet opgehaald</span>{% endif %}
       </td>
     </tr>
     {% endfor %}
