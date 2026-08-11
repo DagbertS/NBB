@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Data & integraties — NBB M&A Screening{% endblock %}
+{% block content %}
+<h1>Data &amp; integraties</h1>
+<p class="muted">Alle databestanden worden hier één keer geladen en gelden
+daarna voor de <strong>hele applicatie</strong>: het zoekscherm, elke longlist,
+de screening-pipeline en de individuele screenings.</p>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if notice %}<p class="badge ok" style="display:inline-block">{{ notice }}</p>{% endif %}
+
+<div class="card">
+  <h2>Status</h2>
+  <ul>
+    <li>KBO-zoekdatabase (voor Zoeken/Longlists):
+      {% if kbo_loaded %}<span class="badge ok">geladen</span>
+      {% else %}<span class="badge err">nog niet geladen</span>{% endif %}
+      {% if kbo_import_status %}<br><span class="muted">Import: {{ kbo_import_status }}</span>{% endif %}
+    </li>
+    <li>KBO Full-dump (voor de pipeline):
+      {% if status.kbo_zip %}<span class="badge ok">{{ status.kbo_zip }}</span>
+        <span class="muted">({{ status.kbo_zip_mtime }})</span>
+      {% else %}<span class="badge err">ontbreekt</span>{% endif %}
+    </li>
+    <li>NBB-taxonomie (rubriekcodes):
+      {% if status.taxonomy_codes %}<span class="badge ok">{{ status.taxonomy_codes }} codes</span>
+      {% else %}<span class="badge err">nog niet geïmporteerd</span>{% endif %}
+    </li>
+    <li>NACE-conversietabel 2008↔2025:
+      {% if status.bridge %}<span class="badge ok">{{ status.bridge }}</span>
+      {% else %}<span class="badge err">ontbreekt — 1-op-veel-vlag blijft leeg</span>{% endif %}
+    </li>
+    <li>Handmatige signalen:
+      {% if status.manual_signals %}<span class="badge ok">geladen</span>
+      {% else %}<span class="badge">geen (optioneel)</span>{% endif %}
+    </li>
+    <li>NBB CBSO-koppeling (jaarrekeningen ophalen):
+      {% if has_cbso_key %}<span class="badge ok">key ingesteld</span>
+      {% else %}<span class="badge err">geen key — stel NBB_CBSO_SUBSCRIPTION_KEY in bij de omgevingsvariabelen</span>{% endif %}
+    </li>
+    <li>KBO Open Data-login (maandelijkse updates):
+      {% if has_kbo_login %}<span class="badge ok">ingesteld</span>
+      {% else %}<span class="badge err">geen login — stel KBO_USERNAME/KBO_PASSWORD in</span>{% endif %}
+    </li>
+  </ul>
+  <p class="muted">Datamap: <code>{{ status.data_root }}</code></p>
+</div>
+
+{% if user.role == 'admin' %}
+<div class="card">
+  <h2>KBO Open Data (bedrijvenregister)</h2>
+  <p class="muted">Eén zip voedt alles: na de upload staat hij klaar voor de
+  pipeline én wordt hij automatisch in de zoekdatabase geladen (30-60 min,
+  op de achtergrond).</p>
+
+  <form method="post" action="/screening/upload/kbo" enctype="multipart/form-data"
+        style="margin-bottom:0.6rem">
+    <label><strong>Full-zip uploaden</strong> <span class="muted">(KboOpenData_…_Full.zip, enkele GB — laat het tabblad open tijdens de upload)</span></label><br>
+    <input type="file" name="file" accept=".zip" required>
+    <button class="btn-small">Upload</button>
+  </form>
+
+  <form method="post" action="/screening/kbo-adopt" style="margin-bottom:0.6rem">
+    <button class="btn-small btn-secondary">Gebruik de zip die eerder al gedownload werd</button>
+  </form>
+
+  <form method="post" action="/admin/kbo-import" style="display:inline"
+        onsubmit="return confirm('Full-zip downloaden bij het KBO-portaal en importeren? Vereist KBO_USERNAME/KBO_PASSWORD.')">
+    <button class="btn-small btn-secondary">Download rechtstreeks bij KBO (met login)</button>
+  </form>
+  <form method="post" action="/admin/kbo-import-url"
+        style="display:flex; gap:0.4rem; margin-top:0.4rem; flex-wrap:wrap"
+        onsubmit="return confirm('Zip van deze link downloaden en importeren?')">
+    <input type="text" name="url" placeholder="of plak een directe downloadlink (bv. Dropbox …?dl=1)"
+           required style="flex:1; min-width:260px">
+    <button class="btn-small">Importeer via link</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>NBB-modellen / taxonomie</h2>
+  <form method="post" action="/screening/upload/taxonomy" enctype="multipart/form-data">
+    <label><span class="muted">Meerdere bestanden tegelijk: volledig-, verkort-, micro- en conso-model
+    als PDF, of de XBRL-taxonomie-zip. De rubriekcodelijst wordt telkens uit
+    álle geüploade bestanden samen herbouwd.</span></label><br>
+    <input type="file" name="files" accept=".pdf,.zip,.xlsx,.xls,.csv" multiple required>
+    <button class="btn-small">Importeer</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>NACE-conversietabel 2008↔2025</h2>
+  <form method="post" action="/screening/upload/bridge" enctype="multipart/form-data">
+    <label><span class="muted">conversion…xlsx van FOD Economie/Statbel — nodig om bedrijven met een
+    dubbelzinnige NACE-omzetting te markeren.</span></label><br>
+    <input type="file" name="file" accept=".xlsx,.csv" required>
+    <button class="btn-small">Upload</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Handmatige signalen</h2>
+  <form method="post" action="/screening/upload/manual-signals" enctype="multipart/form-data">
+    <label><span class="muted">yaml-bestand; elk signaal verplicht met enterprise_number, signal,
+    source en as_of — bv. Staatsblad-bevindingen die je in de browser opzocht
+    (automatisch ophalen mag niet volgens robots.txt).</span></label><br>
+    <input type="file" name="file" accept=".yaml,.yml" required>
+    <button class="btn-small">Upload</button>
+  </form>
+</div>
+{% else %}
+<div class="card">
+  <p class="muted">Bestanden uploaden of vervangen kan alleen een beheerder.</p>
+</div>
+{% endif %}
+{% endblock %}

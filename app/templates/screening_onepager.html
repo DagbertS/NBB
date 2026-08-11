@@ -3,6 +3,12 @@
 {% block content %}
 <h1>One-pager — {{ enterprise_number }}</h1>
 <p><a href="/screening/longlist">&larr; terug naar de longlist</a></p>
+{% if analysis_id %}
+<p>
+  <a class="btn" href="/analyses/{{ analysis_id }}/pdf">Download als PDF</a>
+  <span class="muted">automatisch bewaard bij <a href="/analyses">Analyses</a></span>
+</p>
+{% endif %}
 {% if error %}
 <div class="card"><p class="error">{{ error }}</p></div>
 {% else %}

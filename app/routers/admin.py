@@ -44,6 +44,9 @@ def _kbo_import_bg() -> None:
             return
         _set_import_status(f"bezig: downloaden van {fulls[-1]} (enkele GB) ...")
         path = download_file(fulls[-1])
+        from ..services.screening import adopt_zip_file
+
+        adopt_zip_file(path)  # zelfde zip meteen ook voor de screening-pipeline
         _set_import_status(f"bezig: importeren van {path.name} ...")
         import_full_zip(path, progress=lambda msg: _set_import_status(f"bezig: {str(msg).strip()}"))
         _set_import_status(f"klaar: {path.name} geïmporteerd")
@@ -53,13 +56,14 @@ def _kbo_import_bg() -> None:
 
 @router.post("/kbo-import")
 def start_kbo_import(
+    request: Request,
     background_tasks: BackgroundTasks,
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     background_tasks.add_task(_kbo_import_bg)
     log_action(db, user.id, "kbo_import_started", "")
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(request.headers.get("referer") or "/", status_code=303)
 
 
 def _kbo_import_from_url_bg(url: str) -> None:
@@ -96,6 +100,9 @@ def _kbo_import_from_url_bg(url: str) -> None:
             )
             target.unlink()
             return
+        from ..services.screening import adopt_zip_file
+
+        adopt_zip_file(target)  # zelfde zip meteen ook voor de screening-pipeline
         _set_import_status("bezig: importeren van de zip ...")
         import_full_zip(target, progress=lambda msg: _set_import_status(f"bezig: {str(msg).strip()}"))
         _set_import_status("klaar: handmatige Full-zip geïmporteerd")
@@ -105,6 +112,7 @@ def _kbo_import_from_url_bg(url: str) -> None:
 
 @router.post("/kbo-import-url")
 def start_kbo_import_from_url(
+    request: Request,
     background_tasks: BackgroundTasks,
     url: str = Form(...),
     user: User = Depends(require_admin),
@@ -115,7 +123,7 @@ def start_kbo_import_from_url(
         raise HTTPException(400, "Geef een volledige http(s)-link op")
     background_tasks.add_task(_kbo_import_from_url_bg, url)
     log_action(db, user.id, "kbo_import_url_started", url)
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse(request.headers.get("referer") or "/", status_code=303)
 
 
 @router.get("/users")

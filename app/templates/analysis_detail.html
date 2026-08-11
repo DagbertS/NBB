@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Analyse {{ a.enterprise_number }} — NBB M&A Screening{% endblock %}
+{% block content %}
+<h1>{{ a.company_name or "Analyse" }} — {{ a.enterprise_number }}</h1>
+<p>
+  <a href="/analyses">&larr; alle analyses</a> ·
+  <span class="badge">{{ a.kind }}</span>
+  <span class="muted">{{ a.created_at.strftime("%Y-%m-%d %H:%M") }} UTC
+    {% if a.created_by %}— {{ a.created_by.email }}{% endif %}</span>
+</p>
+<p>
+  <a class="btn" href="/analyses/{{ a.id }}/pdf">Download als PDF</a>
+  <a class="btn btn-secondary" href="/companies/{{ a.enterprise_number }}">Bedrijfsfiche</a>
+</p>
+<div class="card">
+  <pre class="report">{{ a.report_md }}</pre>
+</div>
+{% endblock %}

@@ -51,10 +51,15 @@ def search_companies(
             where.append("name LIKE ? COLLATE NOCASE")
             params.append(f"%{name.strip()}%")
     if enterprise_number:
-        num = enterprise_number.replace(".", "").replace(" ", "")
+        # Accepteert ondernemingsnummer én BTW-nummer: BE-prefix, punten en
+        # spaties worden genegeerd; oude 9-cijferige nummers krijgen een 0 vooraan.
+        num = enterprise_number.upper().replace("BTW", "").replace("BE", "") \
+            .replace(".", "").replace(" ", "").strip()
+        if len(num) == 9 and num.isdigit():
+            num = "0" + num
         formatted = f"{num[0:4]}.{num[4:7]}.{num[7:10]}" if len(num) == 10 else enterprise_number
-        where.append("(enterprise_number = ? OR enterprise_number = ?)")
-        params.extend([enterprise_number.strip(), formatted])
+        where.append("(enterprise_number = ? OR enterprise_number = ? OR enterprise_number = ?)")
+        params.extend([enterprise_number.strip(), formatted, num])
     if zipcode:
         where.append("zipcode = ?")
         params.append(zipcode.strip())

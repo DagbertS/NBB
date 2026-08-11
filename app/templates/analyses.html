@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Analyses — NBB M&A Screening{% endblock %}
+{% block content %}
+<h1>Bewaarde analyses</h1>
+
+{% if started %}
+<p class="badge ok" style="display:inline-block">Individuele screening gestart —
+herlaad deze pagina; het resultaat verschijnt hieronder zodra het klaar is.</p>
+{% endif %}
+{% if individual_status %}
+<p>Status individuele screening:
+  {% if individual_status.startswith('bezig') %}<span class="badge">{{ individual_status }}</span>
+  {% elif individual_status.startswith('fout') %}<span class="badge err">{{ individual_status }}</span>
+  {% else %}<span class="badge ok">{{ individual_status }}</span>{% endif %}
+</p>
+{% endif %}
+
+<div class="card">
+  <form method="get" action="/analyses" style="display:flex; gap:0.5rem; flex-wrap:wrap">
+    <input type="text" name="q" value="{{ q }}" placeholder="zoek op naam of nummer"
+           style="max-width:300px">
+    <button class="btn-small">Zoek</button>
+  </form>
+
+  {% if entries %}
+  <div class="table-wrap" style="margin-top:0.8rem"><table>
+    <tr><th>Datum</th><th>Bedrijf</th><th>Nummer</th><th>Type</th><th>Door</th><th></th></tr>
+    {% for a in entries %}
+    <tr>
+      <td>{{ a.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td><a href="/analyses/{{ a.id }}">{{ a.company_name or "—" }}</a></td>
+      <td>{{ a.enterprise_number }}</td>
+      <td><span class="badge">{{ a.kind }}</span></td>
+      <td class="muted">{{ a.created_by.email if a.created_by else "—" }}</td>
+      <td>
+        <a class="btn btn-small" href="/analyses/{{ a.id }}/pdf">PDF</a>
+        {% if user.role == 'admin' %}
+        <form method="post" action="/analyses/{{ a.id }}/delete" style="display:inline"
+              onsubmit="return confirm('Deze analyse verwijderen?')">
+          <button class="btn-small btn-danger">×</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}
+  <p class="muted" style="margin-top:0.8rem">Nog geen analyses bewaard. Ze
+  ontstaan automatisch: open een one-pager vanuit de
+  <a href="/screening/longlist">screening-longlist</a>, of start een
+  individuele screening vanaf een bedrijfsfiche (Zoeken &rarr; bedrijf aanklikken).</p>
+  {% endif %}
+</div>
+{% endblock %}

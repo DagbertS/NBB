@@ -31,6 +31,15 @@
 {% endif %}
 
 <div class="card">
+  <h2>Screening</h2>
+  <form method="post" action="/screening/individual/{{ enterprise_number }}" style="display:inline"
+        onsubmit="return confirm('Individuele screening starten? NBB-cijfers worden opgehaald (indien CBSO-key) en het rapport wordt bewaard bij Analyses.')">
+    <button type="submit">Individuele screening</button>
+  </form>
+  <a class="btn btn-secondary" href="/analyses?q={{ enterprise_number }}">Eerdere analyses van dit bedrijf</a>
+</div>
+
+<div class="card">
   <h2>NBB-neerleggingen ({{ deposits | length }})</h2>
   <form method="post" action="/nbb/fetch/{{ enterprise_number }}" style="display:inline">
     <button type="submit">Ophalen bij NBB</button>

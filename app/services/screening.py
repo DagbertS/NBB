@@ -330,3 +330,278 @@ def onepager_markdown(enterprise_number: str) -> str:
         return onepager.generate_report(enterprise_number)
     except onepager.ReportError as exc:
         raise ScreeningError(str(exc)) from exc
+
+
+# ── bewaarde analyses ────────────────────────────────────────────────────────
+
+def normalize_number(enterprise_number: str) -> str:
+    return str(enterprise_number).upper().replace("BTW", "").replace("BE", "") \
+        .replace(".", "").replace(" ", "").strip()
+
+
+def save_analysis(db, enterprise_number: str, name: str, kind: str,
+                  report_md: str, user_id: int | None):
+    """Bewaar een analyse; identieke opeenvolgende versies worden niet
+    gedupliceerd (de historiek toont alleen inhoudelijke wijzigingen)."""
+    from ..models import Analysis
+
+    num = normalize_number(enterprise_number)
+    newest = (
+        db.query(Analysis)
+        .filter(Analysis.enterprise_number == num, Analysis.kind == kind)
+        .order_by(Analysis.created_at.desc())
+        .first()
+    )
+    if newest and newest.report_md == report_md:
+        return newest
+    analysis = Analysis(enterprise_number=num, company_name=name or "",
+                        kind=kind, report_md=report_md, created_by_id=user_id)
+    db.add(analysis)
+    db.commit()
+    return analysis
+
+
+# ── individuele screening van één bedrijf ────────────────────────────────────
+
+INDIVIDUAL_STATUS_KEY = "individual_status"
+
+
+def _set_individual_status(text: str) -> None:
+    with sqlite3.connect(DATABASE_PATH, timeout=60) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT DEFAULT '')"
+        )
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                     (INDIVIDUAL_STATUS_KEY, text))
+        conn.commit()
+
+
+def get_individual_status() -> str:
+    try:
+        with sqlite3.connect(DATABASE_PATH, timeout=60) as conn:
+            row = conn.execute("SELECT value FROM settings WHERE key = ?",
+                               (INDIVIDUAL_STATUS_KEY,)).fetchone()
+        return row[0] if row else ""
+    except sqlite3.OperationalError:
+        return ""
+
+
+def sync_deposits_to_pipeline(enterprise_number: str) -> int:
+    """Kopieer de CBSO-JSON-neerleggingen die de webapp voor dit bedrijf
+    ophaalde (DOCUMENT_STORE) naar de pipeline-datamap (raw/nbb), zodat één
+    opgehaald bestand overal in de applicatie bruikbaar is."""
+    from ..config import DOCUMENT_STORE
+
+    num = normalize_number(enterprise_number)
+    src_dir = Path(DOCUMENT_STORE) / num
+    if not src_dir.exists():
+        return 0
+    nbb_raw = pipeline_config.RAW_DIR / "nbb"
+    nbb_raw.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for src in src_dir.glob("*.json"):
+        target = nbb_raw / src.name
+        if not target.exists():
+            try:
+                os.link(src, target)
+            except OSError:
+                shutil.copy2(src, target)
+        n += 1
+    return n
+
+
+def _identity_from_kbo(num: str) -> dict:
+    from .kbo_search import company_detail, nace_description
+
+    detail = company_detail(num) or company_detail(
+        f"{num[0:4]}.{num[4:7]}.{num[7:10]}" if len(num) == 10 else num
+    )
+    if not detail:
+        return {}
+    company = detail["company"]
+    nace = company.get("main_nace") or ""
+    return {
+        "name": company.get("name") or "",
+        "nace": nace,
+        "nace_desc": nace_description(nace) if nace else "",
+        "status": company.get("status") or "",
+        "juridical_form": company.get("juridical_form") or "",
+        "municipality": company.get("municipality") or "",
+        "province": company.get("province") or "",
+        "start_date": company.get("start_date") or "",
+    }
+
+
+def individual_markdown(enterprise_number: str) -> str:
+    """Analyse van één bedrijf, ook buiten de thesis/longlist: KBO-identiteit
+    + alle lokale jaarrekeningcijfers en signalen. Valt terug op de volledige
+    one-pager (met peer-kwartielen) zodra het bedrijf in de longlist staat."""
+    num = normalize_number(enterprise_number)
+    try:
+        return onepager_markdown(num)   # rijkste variant: met peers en score
+    except ScreeningError:
+        pass
+
+    import polars as pl
+    from screen.report.onepager import REPORT_METRICS, _fmt
+
+    identity = _identity_from_kbo(num)
+    lines: list[str] = []
+    add = lines.append
+    add(f"# {identity.get('name') or 'Naam onbekend'} — {num}")
+    add("")
+    add("| | |")
+    add("|---|---|")
+    add(f"| Ondernemingsnummer | {num} |")
+    if identity:
+        nace_txt = identity["nace"] + (f" ({identity['nace_desc']})" if identity["nace_desc"] else "")
+        add(f"| Hoofd-NACE | {nace_txt or '—'} |")
+        add(f"| Rechtsvorm | {identity['juridical_form'] or '—'} |")
+        add(f"| Gemeente | {identity['municipality'] or '—'} |")
+        add(f"| Status | {identity['status'] or '—'} |")
+        add(f"| Startdatum | {identity['start_date'] or '—'} |")
+    else:
+        add("| KBO-gegevens | niet lokaal beschikbaar (KBO-data nog niet geladen) |")
+    add("")
+    add("> Dit bedrijf valt buiten de huidige thesis-longlist; peer-kwartielen "
+        "en scores zijn daarom niet van toepassing. Hieronder de lokaal "
+        "beschikbare jaarrekeningcijfers.")
+    add("")
+
+    add("## Genormaliseerde cijfers (max. 5 boekjaren)")
+    add("")
+    metrics_path = pipeline_config.INTERIM_DIR / "metrics.parquet"
+    company_metrics = pl.DataFrame()
+    if metrics_path.exists():
+        company_metrics = (
+            pl.read_parquet(metrics_path)
+            .filter(pl.col("enterprise_number") == num)
+            .sort("fiscal_year")
+        )
+    if company_metrics.is_empty():
+        add("_Geen jaarrekeningdata lokaal — haal eerst de NBB-neerleggingen op "
+            "(knop 'Individuele screening' doet dit automatisch zodra er een "
+            "CBSO-key is ingesteld)._")
+    else:
+        years = company_metrics["fiscal_year"].to_list()[-5:]
+        sub = company_metrics.filter(pl.col("fiscal_year").is_in(years))
+        add("| Metric | " + " | ".join(str(y) for y in years) + " |")
+        add("|---" * (len(years) + 1) + "|")
+        estimates = False
+        for metric, label in REPORT_METRICS:
+            if metric not in sub.columns:
+                continue
+            cells = []
+            for y in years:
+                r = sub.filter(pl.col("fiscal_year") == y)
+                if r.height == 0:
+                    cells.append("—")
+                    continue
+                value = r[metric][0]
+                source_col = f"{metric}_source"
+                source = r[source_col][0] if source_col in r.columns else None
+                cell = _fmt(value, metric)
+                if source == "estimate" and value is not None:
+                    cell += " *(schatting)*"
+                    estimates = True
+                cells.append(cell)
+            add(f"| {label} | " + " | ".join(cells) + " |")
+        add("")
+        if estimates:
+            add("> *(schatting)* = afgeleide waarde, géén gepubliceerd feit.")
+    add("")
+
+    add("## Signalen")
+    add("")
+    signals_path = pipeline_config.MARTS_DIR / "signals.parquet"
+    company_signals = pl.DataFrame()
+    if signals_path.exists():
+        company_signals = pl.read_parquet(signals_path).filter(
+            pl.col("enterprise_number") == num
+        )
+    if company_signals.is_empty():
+        add("_Geen signalen geregistreerd._")
+    else:
+        add("| Signaal | Waarde | Bron | Datum |")
+        add("|---|---|---|---|")
+        for s in company_signals.sort("as_of").iter_rows(named=True):
+            add(f"| {s['signal']} | {s['value']} | {s['source']} | {s['as_of']} |")
+    add("")
+    add("---")
+    add("_Individuele screening — methodologie en aannames: docs/METHODOLOGY.md. "
+        "Geschatte waarden zijn nooit feiten._")
+    return "\n".join(lines)
+
+
+def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> None:
+    """Achtergrondtaak: NBB-neerleggingen ophalen (als er een CBSO-key is),
+    facts/metrics/signalen herbouwen en het resultaat als analyse bewaren."""
+    from ..database import SessionLocal
+
+    num = normalize_number(enterprise_number)
+    note = ""
+    try:
+        _set_individual_status(f"bezig: {num} — NBB-neerleggingen ophalen ...")
+        db = SessionLocal()
+        try:
+            try:
+                from .cbso_client import CbsoError, fetch_and_store
+
+                fetch_and_store(db, num)
+            except CbsoError as exc:
+                note = f"NBB niet geraadpleegd: {exc}"
+            except Exception as exc:
+                note = f"NBB-ophaling mislukt ({type(exc).__name__}: {exc}) — lokale data gebruikt"
+
+            copied = sync_deposits_to_pipeline(num)
+            if copied:
+                _set_individual_status(f"bezig: {num} — cijfers herberekenen ...")
+                from screen import build as build_mod
+                from screen.normalize import build_metrics as norm
+                from screen.peers import peer_set
+                from screen.signals import build_signals as sig
+
+                build_mod.build_facts(progress=lambda *_: None)
+                ratio, ratio_note = None, ""
+                universe_path = pipeline_config.INTERIM_DIR / "universe.parquet"
+                if universe_path.exists():
+                    import polars as pl
+
+                    ratio, ratio_note = peer_set.compute_revenue_ratio(
+                        pl.read_parquet(universe_path)
+                    )
+                norm.build_metrics(revenue_ratio=ratio, revenue_ratio_note=ratio_note,
+                                   progress=lambda *_: None)
+                manual = MANUAL_SIGNALS_PATH if MANUAL_SIGNALS_PATH.exists() else None
+                sig.build_signals(manual_path=manual, progress=lambda *_: None)
+
+            _set_individual_status(f"bezig: {num} — rapport opstellen ...")
+            report = individual_markdown(num)
+            if note:
+                report += f"\n\n> ⚠ {note}\n"
+            identity = _identity_from_kbo(num)
+            save_analysis(db, num, identity.get("name", ""), "individueel",
+                          report, user_id)
+        finally:
+            db.close()
+        _set_individual_status(f"klaar: individuele screening van {num} bewaard")
+    except Exception as exc:
+        _set_individual_status(f"fout: {num} — {type(exc).__name__}: {exc}")
+
+
+def adopt_zip_file(path: Path) -> None:
+    """Zet een elders gedownloade Full-zip ook in de pipeline-datamap
+    (hardlink, geen dubbele GB's). Stil bij mislukking — dit is een bonus."""
+    try:
+        name = path.name if path.name.startswith("KboOpenData_") \
+            else "KboOpenData_00000_dashboard_Full.zip"
+        target = KBO_RAW_DIR / name
+        if target.exists():
+            return
+        KBO_RAW_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(path, target)
+        except OSError:
+            shutil.copy2(path, target)
+    except Exception:
+        pass

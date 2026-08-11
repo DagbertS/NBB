@@ -114,6 +114,24 @@ class PromptRun(Base):
     prompt: Mapped["Prompt"] = relationship(back_populates="runs")
 
 
+class Analysis(Base):
+    """Bewaard screeningresultaat: pipeline-one-pager of individuele screening.
+    Elke run die inhoudelijk verschilt van de vorige wordt als nieuwe rij
+    bewaard, zodat de historiek per bedrijf blijft bestaan."""
+
+    __tablename__ = "analyses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    enterprise_number: Mapped[str] = mapped_column(String(15), index=True)
+    company_name: Mapped[str] = mapped_column(String(255), default="")
+    kind: Mapped[str] = mapped_column(String(20), default="pipeline")  # pipeline | individueel
+    report_md: Mapped[str] = mapped_column(Text, default="")
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    created_by: Mapped["User"] = relationship()
+
+
 class Setting(Base):
     """Sleutel/waarde-instellingen, o.a. laatst verwerkte KBO-extract en daily extract."""
 

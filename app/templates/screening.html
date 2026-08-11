@@ -77,56 +77,17 @@
   <ul>
     <li>KBO Full-dump:
       {% if status.kbo_zip %}<span class="badge ok">{{ status.kbo_zip }}</span>
-        <span class="muted">({{ status.kbo_zip_mtime }})</span>
       {% else %}<span class="badge err">ontbreekt</span>{% endif %}
     </li>
-    <li>NBB-taxonomie (rubriekcodes):
+    <li>NBB-taxonomie:
       {% if status.taxonomy_codes %}<span class="badge ok">{{ status.taxonomy_codes }} codes</span>
       {% else %}<span class="badge err">nog niet geïmporteerd</span>{% endif %}
     </li>
-    <li>NACE-conversietabel 2008↔2025:
+    <li>NACE-conversietabel:
       {% if status.bridge %}<span class="badge ok">{{ status.bridge }}</span>
-      {% else %}<span class="badge err">ontbreekt — 1-op-veel-vlag blijft leeg</span>{% endif %}
-    </li>
-    <li>Handmatige signalen:
-      {% if status.manual_signals %}<span class="badge ok">geladen</span>
-      {% else %}<span class="badge">geen (optioneel)</span>{% endif %}
+      {% else %}<span class="badge err">ontbreekt</span>{% endif %}
     </li>
   </ul>
-
-  {% if user.role == 'admin' %}
-  <hr style="border:none; border-top:1px solid #e2e8f0; margin:0.8rem 0">
-
-  <form method="post" action="/screening/upload/kbo" enctype="multipart/form-data"
-        style="margin-bottom:0.6rem">
-    <label><strong>KBO Full-zip uploaden</strong> <span class="muted">(KboOpenData_…_Full.zip, enkele GB — laat het tabblad open tijdens de upload)</span></label><br>
-    <input type="file" name="file" accept=".zip" required>
-    <button class="btn-small">Upload</button>
-  </form>
-  <form method="post" action="/screening/kbo-adopt" style="margin-bottom:0.6rem">
-    <button class="btn-small btn-secondary">Of: gebruik de zip die het dashboard al downloadde</button>
-  </form>
-
-  <form method="post" action="/screening/upload/taxonomy" enctype="multipart/form-data"
-        style="margin-bottom:0.6rem">
-    <label><strong>NBB-modellen / taxonomie</strong> <span class="muted">(meerdere bestanden tegelijk: volledig-, verkort-, micro-, conso-model als PDF, of de taxonomie-zip)</span></label><br>
-    <input type="file" name="files" accept=".pdf,.zip,.xlsx,.xls,.csv" multiple required>
-    <button class="btn-small">Importeer</button>
-  </form>
-
-  <form method="post" action="/screening/upload/bridge" enctype="multipart/form-data"
-        style="margin-bottom:0.6rem">
-    <label><strong>NACE-conversietabel</strong> <span class="muted">(conversion…xlsx van FOD Economie/Statbel)</span></label><br>
-    <input type="file" name="file" accept=".xlsx,.csv" required>
-    <button class="btn-small">Upload</button>
-  </form>
-
-  <form method="post" action="/screening/upload/manual-signals" enctype="multipart/form-data">
-    <label><strong>Handmatige signalen</strong> <span class="muted">(yaml; elk signaal met enterprise_number, signal, source en as_of — bv. Staatsblad-bevindingen uit de browser)</span></label><br>
-    <input type="file" name="file" accept=".yaml,.yml" required>
-    <button class="btn-small">Upload</button>
-  </form>
-  {% endif %}
-  <p class="muted" style="margin-top:0.6rem">Datamap: <code>{{ status.data_root }}</code></p>
+  <a class="btn" href="/screening/data">Data &amp; integraties beheren</a>
 </div>
 {% endblock %}

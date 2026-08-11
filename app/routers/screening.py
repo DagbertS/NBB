@@ -62,19 +62,50 @@ def run_pipeline(
     return RedirectResponse("/screening", status_code=303)
 
 
+def _data_context(request: Request, user: User, db: Session,
+                  error: str = "", notice: str = ""):
+    from ..models import Setting
+    from ..services.kbo_search import kbo_loaded
+
+    from .. import config as app_config
+
+    return {
+        "request": request,
+        "user": user,
+        "status": screening.data_status(),
+        "kbo_loaded": kbo_loaded(),
+        "kbo_import_status": (db.get(Setting, "kbo_import_status") or Setting(value="")).value,
+        "has_cbso_key": bool(app_config.NBB_CBSO_SUBSCRIPTION_KEY),
+        "has_kbo_login": bool(app_config.KBO_USERNAME and app_config.KBO_PASSWORD),
+        "error": error,
+        "notice": notice,
+    }
+
+
+@router.get("/data")
+def data_page(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return templates.TemplateResponse(
+        request, "screening_data.html", _data_context(request, user, db)
+    )
+
+
 def _upload_response(request, user, db, action: str, fn, detail_fmt: str):
     """Gemeenschappelijk stramien: uitvoeren, audit-loggen, fout netjes tonen."""
     try:
         result = fn()
     except screening.ScreeningError as exc:
         return templates.TemplateResponse(
-            request, "screening.html",
-            _overview_context(request, user, error=str(exc)),
+            request, "screening_data.html",
+            _data_context(request, user, db, error=str(exc)),
         )
     log_action(db, user.id, action, detail_fmt.format(result=result))
     return templates.TemplateResponse(
-        request, "screening.html",
-        _overview_context(request, user, notice=detail_fmt.format(result=result)),
+        request, "screening_data.html",
+        _data_context(request, user, db, notice=detail_fmt.format(result=result)),
     )
 
 
@@ -111,14 +142,35 @@ def upload_bridge(
 def upload_kbo(
     request: Request,
     file: UploadFile,
+    background_tasks: BackgroundTasks,
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    def do():
-        return screening.save_kbo_zip(file).name
+    """Eén upload voedt de hele applicatie: de zip gaat naar de
+    pipeline-datamap én wordt op de achtergrond in de zoekdatabase geladen."""
 
-    return _upload_response(request, user, db, "screening_kbo_upload", do,
-                            "KBO-zip opgeslagen als {result}")
+    def do():
+        target = screening.save_kbo_zip(file)
+
+        def import_to_search_db():
+            from .admin import _set_import_status
+            from ..services.kbo_import import import_full_zip
+
+            try:
+                _set_import_status(f"bezig: importeren van {target.name} in de zoekdatabase ...")
+                import_full_zip(target, progress=lambda m: _set_import_status(
+                    f"bezig: {str(m).strip()}"))
+                _set_import_status(f"klaar: {target.name} geïmporteerd")
+            except Exception as exc:
+                _set_import_status(f"fout: {exc}")
+
+        background_tasks.add_task(import_to_search_db)
+        return target.name
+
+    return _upload_response(
+        request, user, db, "screening_kbo_upload", do,
+        "KBO-zip opgeslagen als {result} — de zoekdatabase wordt op de "
+        "achtergrond bijgewerkt (status hieronder)")
 
 
 @router.post("/kbo-adopt")
@@ -294,14 +346,37 @@ def company_onepager(
     request: Request,
     enterprise_number: str,
     user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
+    analysis_id = None
     try:
         report = screening.onepager_markdown(enterprise_number)
         error = ""
+        # elk gegenereerd resultaat wordt bewaard (historiek in /analyses)
+        name = report.splitlines()[0].lstrip("# ").split("—")[0].strip() if report else ""
+        analysis = screening.save_analysis(
+            db, enterprise_number, name, "pipeline", report, user.id
+        )
+        analysis_id = analysis.id
     except screening.ScreeningError as exc:
         report, error = "", str(exc)
     return templates.TemplateResponse(
         request, "screening_onepager.html",
         {"user": user, "enterprise_number": enterprise_number,
-         "report": report, "error": error},
+         "report": report, "error": error, "analysis_id": analysis_id},
     )
+
+
+@router.post("/individual/{enterprise_number}")
+def individual_screening(
+    enterprise_number: str,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Individuele screening van één bedrijf: NBB-data ophalen (indien key),
+    cijfers herberekenen en het rapport bewaren bij de analyses."""
+    num = screening.normalize_number(enterprise_number)
+    background_tasks.add_task(screening.run_individual_screening_bg, num, user.id)
+    log_action(db, user.id, "individual_screening_started", num)
+    return RedirectResponse("/analyses?started=1", status_code=303)
