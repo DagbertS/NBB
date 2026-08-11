@@ -45,13 +45,63 @@ def _fiscal_year(exercise_dates: dict, context: str) -> int:
     return date.fromisoformat(str(end)[:10]).year
 
 
+def _structure_sketch(doc, depth: int = 0) -> str:
+    """Compacte beschrijving van de werkelijke JSON-structuur, voor in de
+    foutmelding: zo vertelt de eerste échte neerlegging ons zelf hoe het
+    officiële formaat eruitziet (veldnamen konden nooit live geverifieerd
+    worden — zie docs/SOURCES.md)."""
+    if isinstance(doc, list):
+        inner = f" — eerste element: {_structure_sketch(doc[0], depth + 1)}" \
+            if doc and depth < 2 else ""
+        return f"lijst[{len(doc)}]{inner}"
+    if not isinstance(doc, dict):
+        return type(doc).__name__
+    parts = [f"velden: {list(doc.keys())[:10]}"]
+    facts = doc.get("facts")
+    if isinstance(facts, dict) and facts and depth < 2:
+        first = next(iter(facts.values()))
+        if isinstance(first, dict):
+            parts.append(f"voorbeeldfact: {list(first.keys())[:6]}")
+            dims = first.get("dimensions")
+            if isinstance(dims, dict):
+                sample = {k: str(v)[:60] for k, v in list(dims.items())[:6]}
+                parts.append(f"dimensions: {sample}")
+    doc_info = doc.get("documentInfo")
+    if isinstance(doc_info, dict):
+        parts.append(f"documentInfo: {list(doc_info.keys())[:8]}")
+    return "; ".join(parts)
+
+
+def _locate_body(doc):
+    """Vind het object met de neerleggingsvelden: bovenaan, in een lijst of
+    één niveau dieper ingepakt (bv. onder 'Content' of 'Deposit')."""
+    candidates = [doc]
+    if isinstance(doc, list):
+        candidates = [el for el in doc if isinstance(el, dict)]
+    elif isinstance(doc, dict):
+        candidates += [v for v in doc.values() if isinstance(v, dict)]
+        candidates += [el for v in doc.values() if isinstance(v, list)
+                       for el in v if isinstance(el, dict)]
+    for cand in candidates:
+        if isinstance(cand, dict) and _get(cand, "EnterpriseNumber") is not None:
+            return cand
+    return None
+
+
 def parse_deposit(path: str | Path) -> list[dict]:
     """Eén JSON-XBRL-bestand -> lijst feitrijen (kan leeg zijn)."""
     path = Path(path)
     try:
-        doc = json.loads(path.read_text())
+        raw = json.loads(path.read_text())
     except json.JSONDecodeError as exc:
         raise ParseError(f"{path.name}: geen geldige JSON ({exc})") from exc
+
+    doc = _locate_body(raw)
+    if doc is None:
+        raise ParseError(
+            f"{path.name}: onbekend formaat — geen EnterpriseNumber gevonden. "
+            f"Werkelijke structuur: {_structure_sketch(raw)}"
+        )
 
     ctx = f"in {path.name}"
     enterprise = normalize_enterprise_number(

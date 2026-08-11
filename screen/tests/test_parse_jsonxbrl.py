@@ -78,3 +78,31 @@ def test_non_numeric_value_raises(tmp_path):
 ])
 def test_classify_schema(model, expected):
     assert jx.classify_schema(model) == expected
+
+
+def test_parse_unwraps_nested_document(tmp_path):
+    """Echte CBSO-antwoorden kunnen het document inpakken (lijst of wrapper-
+    object); de parser vindt het EnterpriseNumber-object zelf."""
+    inner = json.loads((FIXTURES / "dep_full_2023.json").read_text())
+    for wrapped in ([inner], {"Content": inner}, {"Deposits": [inner]}):
+        p = tmp_path / "wrapped.json"
+        p.write_text(json.dumps(wrapped))
+        rows = jx.parse_deposit(p)
+        assert rows and rows[0]["enterprise_number"] == "0123456789"
+
+
+def test_parse_unknown_format_reports_structure(tmp_path):
+    """Bij een onbekend formaat vertelt de fout de wérkelijke structuur,
+    zodat de eerste echte neerlegging ons het officiële schema leert."""
+    p = tmp_path / "oim.json"
+    p.write_text(json.dumps({
+        "documentInfo": {"documentType": "https://xbrl.org/2021/xbrl-json"},
+        "facts": {"f1": {"value": "500000", "dimensions": {
+            "concept": "pfs:Equity", "entity": "scheme:0435808429",
+            "period": "2024-01-01T00:00:00/2025-01-01T00:00:00"}}},
+    }))
+    with pytest.raises(jx.ParseError) as exc:
+        jx.parse_deposit(p)
+    msg = str(exc.value)
+    assert "Werkelijke structuur" in msg
+    assert "documentInfo" in msg and "concept" in msg

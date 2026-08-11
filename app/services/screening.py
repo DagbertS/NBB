@@ -632,8 +632,13 @@ def individual_markdown(enterprise_number: str, deposits: list[dict] | None = No
             pl.col("enterprise_number") == num
         )
     if company_signals.is_empty():
-        add("_Geen signalen geregistreerd (geen laattijdige neerleggingen, "
-            "modelwissels of correcties gedetecteerd in de beschikbare data)._")
+        if years:
+            add("_Geen signalen geregistreerd (geen laattijdige neerleggingen, "
+                "modelwissels of correcties gedetecteerd in de verwerkte data)._")
+        else:
+            add("_Signalen niet berekenbaar: er zijn geen automatisch verwerkte "
+                "neerleggingen (zie Databasis) — neerleggingsgedrag is dus níet "
+                "beoordeeld._")
     else:
         add("| Signaal | Waarde | Bron | Datum |")
         add("|---|---|---|---|")
@@ -660,32 +665,37 @@ SYSTEM_PROMPT_BASE = (
     "gemarkeerd staat. Wees concreet en zakelijk, geen holle frasen."
 )
 
-SYSTEM_PROMPT_PDF = (
+SYSTEM_PROMPT_DOCS = (
     "Je bent een senior M&A-analist. Je krijgt (1) een feitenrapport over één "
-    "Belgisch bedrijf en (2) de officiële jaarrekening-PDF's zoals neergelegd "
-    "bij de Nationale Bank van België. De cijfers konden niet automatisch "
-    "gelezen worden, dus JIJ leest ze uit de PDF's.\n"
+    "Belgisch bedrijf en (2) de officiële jaarrekening-neerleggingen zoals "
+    "gepubliceerd door de Nationale Bank van België — als PDF en/of als ruwe "
+    "JSON-XBRL. De cijfers konden niet automatisch verwerkt worden, dus JIJ "
+    "leest ze uit de aangeleverde documenten.\n"
     "Schrijf in het Nederlands en begin met de kop '## Kerncijfers uit de "
-    "jaarrekeningen (gelezen uit de officiële PDF's)': een markdown-tabel per "
-    "boekjaar met minstens omzet of brutomarge (rubriek 70 of 9900), "
-    "bedrijfswinst/EBIT (9901), afschrijvingen (630), eigen vermogen (10/15), "
-    "balanstotaal, financiële schulden, personeelsbestand (VTE) en "
-    "personeelskosten (62) — voor zover ze in de PDF's staan; noteer '—' wat "
-    "ontbreekt en vermeld bij elke tabel de referentie van de neerlegging. "
+    "jaarrekeningen (gelezen uit de officiële neerleggingen)': een "
+    "markdown-tabel met de boekjaren als kolommen en minstens omzet of "
+    "brutomarge (rubriek 70 of 9900), bedrijfswinst/EBIT (9901), "
+    "afschrijvingen (630), eigen vermogen (10/15), balanstotaal, financiële "
+    "schulden, personeelsbestand (VTE) en personeelskosten (62) — voor zover "
+    "aanwezig; noteer '—' wat ontbreekt en vermeld per boekjaar de referentie "
+    "van de neerlegging. In JSON-XBRL vind je de rubrieken als feiten met "
+    "een conceptnaam en een periode; gebruik de rubriekcodes daarin. "
     "Reken daarna zelf de ratio's uit (EBITDA-benadering, marges, "
     "solvabiliteit, netto schuld) en toon de berekening kort.\n"
     "Daarna exact deze koppen (##): Financiële beoordeling, Sterktes, "
     "Aandachtspunten en risico's, Conclusie vanuit overnameperspectief. "
-    "Baseer je uitsluitend op de PDF's en het feitenrapport; verzin geen "
-    "cijfers. Wees concreet en zakelijk."
+    "Baseer je uitsluitend op de documenten en het feitenrapport; verzin "
+    "geen cijfers. Wees concreet en zakelijk."
 )
+
+MAX_AI_JSON_CHARS = 160_000   # per JSON-neerlegging; ruim genoeg voor m81-modellen
 
 
 def ai_commentary(markdown_report: str, company_name: str,
-                  pdf_paths: list[Path] | None = None) -> str | None:
+                  doc_paths: list[Path] | None = None) -> str | None:
     """AI-interpretatie: Claude leest het feitenrapport en — wanneer er geen
-    machineleesbare cijfers zijn — de officiële jaarrekening-PDF's zelf.
-    Faalt stil (None) zonder key of bij een API-fout; de feiten blijven staan."""
+    machineleesbare cijfers zijn — de officiële neerleggingen zelf (PDF én
+    ruwe JSON-XBRL). Faalt stil (None) zonder key of bij een API-fout."""
     import base64
 
     from ..config import ANTHROPIC_API_KEY
@@ -696,24 +706,35 @@ def ai_commentary(markdown_report: str, company_name: str,
         import anthropic
 
         content: list[dict] = []
-        used_pdfs = 0
-        for path in (pdf_paths or [])[:MAX_AI_PDFS]:
+        used_docs = 0
+        for path in (doc_paths or [])[:MAX_AI_PDFS]:
+            suffix = path.suffix.lower()
             try:
-                data = path.read_bytes()
+                if suffix == ".pdf":
+                    data = path.read_bytes()
+                    if len(data) > MAX_AI_PDF_BYTES:
+                        continue
+                    content.append({
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": base64.standard_b64encode(data).decode(),
+                        },
+                        "title": path.stem,
+                    })
+                elif suffix == ".json":
+                    text = path.read_text(errors="replace")[:MAX_AI_JSON_CHARS]
+                    content.append({
+                        "type": "text",
+                        "text": f"--- Officiële neerlegging {path.stem} "
+                                f"(ruwe JSON-XBRL) ---\n{text}",
+                    })
+                else:
+                    continue
             except OSError:
                 continue
-            if len(data) > MAX_AI_PDF_BYTES:
-                continue
-            content.append({
-                "type": "document",
-                "source": {
-                    "type": "base64",
-                    "media_type": "application/pdf",
-                    "data": base64.standard_b64encode(data).decode(),
-                },
-                "title": path.stem,
-            })
-            used_pdfs += 1
+            used_docs += 1
         content.append({
             "type": "text",
             "text": f"Feitenrapport voor {company_name}:\n\n{markdown_report}",
@@ -723,7 +744,7 @@ def ai_commentary(markdown_report: str, company_name: str,
         with client.messages.stream(
             model="claude-opus-5",
             max_tokens=8000,
-            system=SYSTEM_PROMPT_PDF if used_pdfs else SYSTEM_PROMPT_BASE,
+            system=SYSTEM_PROMPT_DOCS if used_docs else SYSTEM_PROMPT_BASE,
             messages=[{"role": "user", "content": content}],
         ) as stream:
             message = stream.get_final_message()
@@ -800,7 +821,7 @@ def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> 
             # antwoordt op onze JSON-vraag, (b) de PDF's aan de AI meegeven
             # zodat de cijfers alsnog gelezen worden.
             api_note = ""
-            pdf_paths: list[Path] = []
+            doc_paths: list[Path] = []
             has_metrics = not _company_metrics(num).is_empty()
             json_deposits = [d for d in deposit_rows if d.data_format == "JSON"]
             if deposit_rows and not json_deposits:
@@ -808,9 +829,12 @@ def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> 
 
                 api_note = probe_accounting_data(deposit_rows[0].reference)
             if not has_metrics:
-                pdf_paths = [
+                # geef de officiële neerleggingen zelf aan de AI: PDF's én
+                # ruwe JSON-XBRL (bij een parseerfout leest Claude de JSON)
+                doc_paths = [
                     Path(d.file_path) for d in deposit_rows
-                    if d.file_path and d.file_path.lower().endswith(".pdf")
+                    if d.file_path
+                    and d.file_path.lower().endswith((".pdf", ".json"))
                     and Path(d.file_path).exists()
                 ][:MAX_AI_PDFS]
 
@@ -822,19 +846,20 @@ def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> 
 
             identity = _identity_from_kbo(num)
             name = identity.get("name", "")
-            if pdf_paths:
+            if doc_paths:
                 _set_individual_status(
-                    f"bezig: {num} — AI leest {len(pdf_paths)} jaarrekening-PDF('s) ..."
+                    f"bezig: {num} — AI leest {len(doc_paths)} officiële "
+                    "neerlegging(en) ..."
                 )
             else:
                 _set_individual_status(f"bezig: {num} — AI-interpretatie schrijven ...")
-            commentary = ai_commentary(report, name or num, pdf_paths=pdf_paths)
+            commentary = ai_commentary(report, name or num, doc_paths=doc_paths)
             if commentary:
-                if pdf_paths:
+                if doc_paths:
                     disclaimer = (
-                        f"> Cijfers hieronder zijn door AI gelezen uit {len(pdf_paths)} "
-                        "officiële NBB-jaarrekening-PDF('s) — niet machine-gevalideerd; "
-                        "verifieer sleutelcijfers in de originele PDF (te downloaden op "
+                        f"> Cijfers hieronder zijn door AI gelezen uit {len(doc_paths)} "
+                        "officiële NBB-neerlegging(en) — niet machine-gevalideerd; "
+                        "verifieer sleutelcijfers in het origineel (te downloaden op "
                         "de bedrijfsfiche). Geen vervanging van due diligence.\n\n"
                     )
                 else:
