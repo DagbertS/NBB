@@ -74,7 +74,8 @@ def is_running() -> bool:
 # ── thesis (zoekcriteria) ─────────────────────────────────────────────────────
 
 THESES_DIR = SCREEN_DATA_ROOT / "theses"
-PIPELINE_KEY_RE = re.compile(r"^(thesis|list-\d+)$")
+DEFAULT_THESIS_KEY = "standaard"
+THESIS_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
 
 
 def ensure_thesis() -> Path:
@@ -85,28 +86,62 @@ def ensure_thesis() -> Path:
     return THESIS_PATH
 
 
-def thesis_path_for(key: str = "thesis") -> Path:
-    """Elke pipeline heeft eigen criteria: 'thesis' gebruikt het hoofdbestand;
-    een lijst-pipeline krijgt bij eerste gebruik een kopie daarvan als start."""
-    key = (key or "thesis").strip()
-    if not PIPELINE_KEY_RE.match(key):
-        raise ScreeningError(f"Ongeldige pipeline-sleutel: {key!r}")
-    if key == "thesis":
+def slugify_thesis(name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")[:40]
+    if not slug or not THESIS_KEY_RE.match(slug):
+        raise ScreeningError(f"Ongeldige naam voor een criteria-set: {name!r}")
+    return slug
+
+
+def thesis_path_for(key: str = DEFAULT_THESIS_KEY) -> Path:
+    """Thesissen zijn benoemde criteria-sets, vrij combineerbaar met elke
+    bron (thesis-selectie of longlist). 'standaard' is het hoofdbestand."""
+    key = (key or DEFAULT_THESIS_KEY).strip()
+    if key in (DEFAULT_THESIS_KEY, "thesis"):   # 'thesis' = oude naam
         return ensure_thesis()
-    THESES_DIR.mkdir(parents=True, exist_ok=True)
+    if not THESIS_KEY_RE.match(key):
+        raise ScreeningError(f"Ongeldige criteria-set: {key!r}")
     path = THESES_DIR / f"{key}.yaml"
     if not path.exists():
-        shutil.copy2(ensure_thesis(), path)
+        raise ScreeningError(f"Criteria-set '{key}' bestaat niet")
     return path
 
 
-def load_thesis(key: str = "thesis") -> pipeline_config.Thesis:
+def create_thesis(name: str) -> str:
+    """Nieuwe criteria-set: kopie van de standaard, onder een eigen naam."""
+    import yaml
+
+    key = slugify_thesis(name)
+    if key in (DEFAULT_THESIS_KEY, "thesis"):
+        raise ScreeningError("Die naam is gereserveerd voor de standaardset")
+    THESES_DIR.mkdir(parents=True, exist_ok=True)
+    path = THESES_DIR / f"{key}.yaml"
+    if path.exists():
+        return key   # bestaat al — geen stille overschrijving
+    raw = yaml.safe_load(ensure_thesis().read_text()) or {}
+    raw["name"] = name.strip()
+    path.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
+    return key
+
+
+def list_theses() -> list[dict]:
+    """Alle criteria-sets: de standaard + alles in theses/."""
+    options = [{"key": DEFAULT_THESIS_KEY, "label": "Standaard-thesis"}]
+    if THESES_DIR.exists():
+        for path in sorted(THESES_DIR.glob("*.yaml")):
+            key = path.stem
+            if THESIS_KEY_RE.match(key):
+                options.append({"key": key, "label": key.replace("-", " ")})
+    return options
+
+
+def load_thesis(key: str = DEFAULT_THESIS_KEY) -> pipeline_config.Thesis:
     return pipeline_config.load_thesis(thesis_path_for(key))
 
 
-def save_thesis(raw: dict, key: str = "thesis") -> pipeline_config.Thesis:
-    """Schrijf de criteria van één pipeline atomisch: eerst naar een tijdelijk
-    bestand, valideren met de pipeline-loader, en pas dan vervangen."""
+def save_thesis(raw: dict, key: str = DEFAULT_THESIS_KEY) -> pipeline_config.Thesis:
+    """Schrijf een criteria-set atomisch: eerst naar een tijdelijk bestand,
+    valideren met de pipeline-loader, en pas dan vervangen."""
     import yaml
 
     path = thesis_path_for(key)
@@ -365,7 +400,8 @@ def list_pipelines(db) -> list:
 
 # ── de volledige pipeline als achtergrondtaak ────────────────────────────────
 
-def run_pipeline_bg(list_id: int | None = None) -> None:
+def run_pipeline_bg(list_id: int | None = None,
+                    thesis_key: str = DEFAULT_THESIS_KEY) -> None:
     from ..database import SessionLocal
     from ..models import CompanyList, CompanyListItem, ScreeningPipeline
     from screen import orchestrate
@@ -379,8 +415,8 @@ def run_pipeline_bg(list_id: int | None = None) -> None:
 
     key = f"list-{list_id}" if list_id else "thesis"
     try:
-        set_status("bezig: criteria van deze pipeline laden ...")
-        thesis = load_thesis(key)
+        set_status(f"bezig: criteria-set '{thesis_key}' laden ...")
+        thesis = load_thesis(thesis_key)
 
         universe_override = None
         pipeline_name = thesis.name
@@ -425,6 +461,7 @@ def run_pipeline_bg(list_id: int | None = None) -> None:
             row.kind = "list" if list_id else "thesis"
             row.list_id = list_id
             row.name = pipeline_name
+            row.thesis_name = thesis_key
             row.row_count = result.row_count
             row.scored_count = scored
             row.built_at = datetime.utcnow()

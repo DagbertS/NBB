@@ -35,9 +35,24 @@ def _bootstrap_admin() -> None:
             logging.info("Eerste admin aangemaakt: %s", ADMIN_EMAIL)
 
 
+def _migrate() -> None:
+    """Minimale schema-migraties voor bestaande databases (create_all voegt
+    geen kolommen toe aan al bestaande tabellen)."""
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        cols = [row[1] for row in
+                conn.execute(text("PRAGMA table_info(screening_pipelines)"))]
+        if cols and "thesis_name" not in cols:
+            conn.execute(text("ALTER TABLE screening_pipelines "
+                              "ADD COLUMN thesis_name VARCHAR(120) DEFAULT ''"))
+            conn.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(engine)
+    _migrate()
     _bootstrap_admin()
     start_scheduler()
     yield

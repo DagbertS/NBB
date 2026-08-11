@@ -45,12 +45,20 @@
   <form method="post" action="/screening/run"
         style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:end"
         onsubmit="return confirm('Deze pipeline bouwen en ranken? Dit kan even duren en draait op de achtergrond.')">
-    <div style="flex:1; min-width:240px">
-      <label>Bron van de screening</label>
+    <div style="flex:1; min-width:220px">
+      <label>Longlist (wie doet mee)</label>
       <select name="list_id">
-        <option value="">Thesis-criteria ({{ thesis.name if thesis else 'thesis.yaml' }})</option>
+        <option value="">Alle KBO-bedrijven die aan de thesis voldoen</option>
         {% for l in company_lists %}
-        <option value="{{ l.id }}">Longlist: {{ l.name }} ({{ l.items | length }} bedrijven)</option>
+        <option value="{{ l.id }}">{{ l.name }} ({{ l.items | length }} bedrijven)</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div style="flex:1; min-width:200px">
+      <label>Thesis (hoe wordt gescoord)</label>
+      <select name="thesis_key">
+        {% for t in theses %}
+        <option value="{{ t.key }}">{{ t.label }}</option>
         {% endfor %}
       </select>
     </div>
@@ -63,19 +71,20 @@
   <h2>Pipelines</h2>
   {% if pipelines %}
   <div class="table-wrap"><table>
-    <tr><th>Pipeline</th><th>Bron</th><th>Bedrijven</th><th>Met score</th>
-        <th>Laatst gebouwd</th><th></th></tr>
+    <tr><th>Pipeline</th><th>Bron</th><th>Thesis</th><th>Bedrijven</th>
+        <th>Met score</th><th>Laatst gebouwd</th><th></th></tr>
     {% for p in pipelines %}
     <tr>
       <td>{{ p.name }}</td>
-      <td>{{ "thesis-criteria" if p.kind == "thesis" else "eigen longlist" }}</td>
+      <td>{{ "thesis-selectie" if p.kind == "thesis" else "eigen longlist" }}</td>
+      <td>{{ p.thesis_name or "standaard" }}</td>
       <td>{{ p.row_count }}</td>
       <td>{{ p.scored_count }}</td>
       <td>{{ p.built_at.strftime("%Y-%m-%d %H:%M") if p.built_at else "—" }}</td>
       <td>
         <a class="btn btn-small" href="/screening/longlist?pipeline={{ p.key }}">Bekijk</a>
         {% if user.role == 'admin' %}
-        <a class="btn btn-small btn-secondary" href="/screening/thesis?pipeline={{ p.key }}">Criteria</a>
+        <a class="btn btn-small btn-secondary" href="/screening/thesis?thesis={{ p.thesis_name or 'standaard' }}">Criteria</a>
         {% endif %}
       </td>
     </tr>
@@ -97,9 +106,8 @@
       Gewichten: financieel {{ thesis.weights.get('financial', 0.5) }},
       groei {{ thesis.weights.get('growth', 0.2) }},
       signalen {{ thesis.weights.get('signals', 0.3) }}<br>
-      Elke longlist-pipeline heeft daarnaast zijn éigen criteria
-      (groottevork, klassegrenzen, gewichten) — via de Criteria-knop in de
-      pipelinetabel of de keuzelijst in de editor.
+      Maak in de editor extra criteria-sets aan; bij Build &amp; rank kies je
+      vrij welke thesis je op welke longlist toepast.
     </p>
   {% else %}
     <p class="error">Thesis kon niet geladen worden: {{ thesis_error }}</p>

@@ -126,6 +126,7 @@ class ScreeningPipeline(Base):
     kind: Mapped[str] = mapped_column(String(10), default="thesis")        # thesis | list
     list_id: Mapped[int | None] = mapped_column(ForeignKey("company_lists.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(255), default="")
+    thesis_name: Mapped[str] = mapped_column(String(120), default="")  # gebruikte criteria-set
     row_count: Mapped[int] = mapped_column(Integer, default=0)
     scored_count: Mapped[int] = mapped_column(Integer, default=0)
     built_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

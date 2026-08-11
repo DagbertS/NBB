@@ -7,30 +7,35 @@
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
 <div class="card">
-  <form method="get" action="/screening/thesis"
-        style="display:flex; gap:0.5rem; align-items:end; flex-wrap:wrap">
-    <div style="flex:1; min-width:260px">
-      <label>Criteria van welke pipeline?</label>
-      <select name="pipeline" onchange="this.form.submit()">
-        {% for opt in pipeline_options %}
-        <option value="{{ opt.key }}" {% if pipeline == opt.key %}selected{% endif %}>{{ opt.label }}</option>
+  <div style="display:flex; gap:1rem; flex-wrap:wrap; align-items:end">
+    <form method="get" action="/screening/thesis" style="flex:1; min-width:240px">
+      <label>Welke criteria-set bewerken?</label>
+      <select name="thesis" onchange="this.form.submit()">
+        {% for opt in thesis_options %}
+        <option value="{{ opt.key }}" {% if thesis_key == opt.key %}selected{% endif %}>{{ opt.label }}</option>
         {% endfor %}
       </select>
-    </div>
-  </form>
-  {% if pipeline != 'thesis' %}
+    </form>
+    <form method="post" action="/screening/thesis/new"
+          style="display:flex; gap:0.4rem; flex:1; min-width:240px; align-items:end">
+      <div style="flex:1">
+        <label>Nieuwe set (kopie van de standaard)</label>
+        <input type="text" name="name" placeholder="bv. groei-focus" required>
+      </div>
+      <button class="btn-small">Aanmaken</button>
+    </form>
+  </div>
   <p class="muted" style="margin-top:0.5rem">
-    Bij een longlist-pipeline bepaalt de <strong>lijst zelf</strong> welke
-    bedrijven meedoen — de NACE-codes en provincies hieronder dienen dan als
-    documentatie. De groottevork, platform/bolt-on-grenzen en scoregewichten
-    sturen wél de scoring van deze pipeline. Nieuwe lijst-criteria starten als
-    kopie van de standaard-thesis.
+    Een criteria-set is vrij combineerbaar met elke bron bij Build &amp; rank.
+    Screen je een <strong>longlist</strong>, dan bepaalt de lijst wie meedoet en
+    sturen hieronder alleen de groottevork, platform/bolt-on-grenzen en
+    gewichten de scoring. Screen je de <strong>thesis-selectie</strong>, dan
+    selecteren de NACE-codes en provincies ook de bedrijven.
   </p>
-  {% endif %}
 </div>
 
 <form method="post" action="/screening/thesis" class="card">
-  <input type="hidden" name="pipeline" value="{{ pipeline }}">
+  <input type="hidden" name="thesis_key" value="{{ thesis_key }}">
   <label>Naam van het dossier *</label>
   <input type="text" name="name" value="{{ raw.get('name', '') }}" required>
 
