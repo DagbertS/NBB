@@ -422,10 +422,80 @@ def list_pipelines(db) -> list:
             .all())
 
 
+def _bulk_individual_analyses(key: str, user_id: int | None,
+                              progress) -> tuple[int, int, int]:
+    """Na Build & rank van een lijst-pipeline: voor elk bedrijf in de
+    longlist een individuele analyse (zoals Aqua Jet) genereren en bewaren.
+    Slaat over: bedrijven zonder enige lokale data, en bedrijven waarvan de
+    bestaande analyse nog actueel is (geen nieuwere NBB-documenten) — zo
+    kost een her-run geen onnodige AI-aanroepen."""
+    import polars as pl
+
+    from ..database import SessionLocal
+    from ..models import Analysis, NbbDeposit
+
+    path = pipeline_dir(key) / "longlist.parquet"
+    if not path.exists():
+        return 0, 0, 0
+    df = pl.read_parquet(path)
+    companies = list(zip(df["enterprise_number"].to_list(),
+                         df["name"].to_list()))
+    done = fresh = nodata = 0
+    with SessionLocal() as db:
+        for i, (num, name) in enumerate(companies, 1):
+            progress(f"individuele analyses {i}/{len(companies)} — {name or num}")
+            deposit_rows = (db.query(NbbDeposit)
+                            .filter(NbbDeposit.enterprise_number == num)
+                            .order_by(NbbDeposit.deposit_date.desc()).all())
+            has_metrics = not _company_metrics(num).is_empty()
+            if not deposit_rows and not has_metrics:
+                nodata += 1
+                continue
+            newest_doc = max((d.fetched_at for d in deposit_rows if d.fetched_at),
+                             default=None)
+            newest_analysis = (db.query(Analysis)
+                               .filter(Analysis.enterprise_number == num,
+                                       Analysis.kind == "individueel")
+                               .order_by(Analysis.created_at.desc()).first())
+            if newest_analysis and (newest_doc is None
+                                    or newest_analysis.created_at >= newest_doc):
+                fresh += 1
+                continue
+
+            deposits = [{
+                "reference": d.reference, "deposit_date": d.deposit_date,
+                "exercise_end": d.exercise_end, "model_type": d.model_type,
+                "data_format": d.data_format,
+            } for d in deposit_rows]
+            doc_paths: list[Path] = []
+            if not has_metrics:
+                doc_paths = [
+                    Path(d.file_path) for d in deposit_rows
+                    if d.file_path
+                    and d.file_path.lower().endswith((".pdf", ".json"))
+                    and Path(d.file_path).exists()
+                ][:MAX_AI_PDFS]
+            report = individual_markdown(num, deposits=deposits, skipped=[])
+            commentary = ai_commentary(report, name or num, doc_paths=doc_paths)
+            if commentary:
+                from .charts import expand_chartdata
+
+                commentary = expand_chartdata(commentary)
+                report += ("\n\n# Interpretatie (AI-analist)\n\n"
+                           "> Automatisch commentaar op basis van de cijfers "
+                           "hierboven — geen vervanging van due diligence.\n\n"
+                           + commentary + "\n")
+            save_analysis(db, num, name or "", "individueel", report, user_id)
+            done += 1
+    return done, fresh, nodata
+
+
 # ── de volledige pipeline als achtergrondtaak ────────────────────────────────
 
 def run_pipeline_bg(list_id: int | None = None,
-                    thesis_key: str = DEFAULT_THESIS_KEY) -> None:
+                    thesis_key: str = DEFAULT_THESIS_KEY,
+                    make_analyses: bool = False,
+                    user_id: int | None = None) -> None:
     from ..database import SessionLocal
     from ..models import CompanyList, CompanyListItem, ScreeningPipeline
     from screen import orchestrate
@@ -491,10 +561,19 @@ def run_pipeline_bg(list_id: int | None = None,
             row.built_at = datetime.utcnow()
             db.commit()
 
+        analyses_note = ""
+        if make_analyses and list_id and result.row_count:
+            done, fresh, nodata = _bulk_individual_analyses(
+                key, user_id,
+                progress=lambda msg: set_status(f"bezig: {msg} ..."),
+            )
+            analyses_note = (f"; {done} individuele analyse(s) gemaakt"
+                             f" ({fresh} nog actueel, {nodata} zonder data)")
+
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         if result.row_count:
             set_status(f"klaar: pipeline '{pipeline_name}' — {result.row_count} "
-                       f"ondernemingen, {scored} met score ({stamp})")
+                       f"ondernemingen, {scored} met score{analyses_note} ({stamp})")
         else:
             set_status(
                 f"klaar zonder longlist ('{pipeline_name}'): geen universe — "

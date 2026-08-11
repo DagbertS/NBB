@@ -62,6 +62,11 @@
         {% endfor %}
       </select>
     </div>
+    <label style="font-weight:normal; display:flex; align-items:center; gap:0.35rem">
+      <input type="checkbox" name="analyses" checked>
+      ook individuele AI-analyse per bedrijf (alleen bij een longlist; al
+      actuele analyses worden overgeslagen)
+    </label>
     <button {% if running %}disabled{% endif %}>Build &amp; rank</button>
   </form>
   {% endif %}

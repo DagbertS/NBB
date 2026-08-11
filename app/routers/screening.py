@@ -60,6 +60,7 @@ def run_pipeline(
     background_tasks: BackgroundTasks,
     list_id: str = Form(""),
     thesis_key: str = Form(screening.DEFAULT_THESIS_KEY),
+    analyses: str = Form(""),
     user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -67,11 +68,13 @@ def run_pipeline(
         return RedirectResponse("/screening", status_code=303)
     target = int(list_id) if list_id.strip().isdigit() else None
     thesis_key = thesis_key.strip() or screening.DEFAULT_THESIS_KEY
+    make_analyses = analyses == "on" and target is not None
     screening.set_status("bezig: gestart ...")
-    background_tasks.add_task(screening.run_pipeline_bg, target, thesis_key)
+    background_tasks.add_task(screening.run_pipeline_bg, target, thesis_key,
+                              make_analyses, user.id)
     log_action(db, user.id, "screening_run_started",
                f"bron={'list-' + str(target) if target else 'thesis'} "
-               f"criteria={thesis_key}")
+               f"criteria={thesis_key} analyses={make_analyses}")
     return RedirectResponse("/screening", status_code=303)
 
 
