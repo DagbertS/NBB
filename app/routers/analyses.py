@@ -55,7 +55,9 @@ def analysis_detail(
 ):
     analysis = _get_analysis(db, analysis_id)
     return templates.TemplateResponse(
-        request, "analysis_detail.html", {"user": user, "a": analysis}
+        request, "analysis_detail.html",
+        {"user": user, "a": analysis,
+         "report_html": screening.render_report_html(analysis.report_md)},
     )
 
 

@@ -12,8 +12,8 @@
 {% if error %}
 <div class="card"><p class="error">{{ error }}</p></div>
 {% else %}
-<div class="card">
-  <pre class="report">{{ report }}</pre>
+<div class="card report-html">
+  {{ report_html | safe }}
 </div>
 {% endif %}
 {% endblock %}

@@ -10,3 +10,4 @@ apscheduler>=3.10
 anthropic>=0.40
 python-dotenv>=1.0
 fpdf2>=2.7
+markdown>=3.6

@@ -364,7 +364,8 @@ def company_onepager(
     return templates.TemplateResponse(
         request, "screening_onepager.html",
         {"user": user, "enterprise_number": enterprise_number,
-         "report": report, "error": error, "analysis_id": analysis_id},
+         "report_html": screening.render_report_html(report) if report else "",
+         "error": error, "analysis_id": analysis_id},
     )
 
 

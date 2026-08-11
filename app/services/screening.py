@@ -323,6 +323,13 @@ def load_longlist(q: str = "", target_class: str = "", min_score: float | None =
     return df.sort(column, descending=descending, nulls_last=True)
 
 
+def render_report_html(markdown_text: str) -> str:
+    """Analyse-markdown -> HTML in de stijl van de app (tabellen incluis)."""
+    import markdown as md_lib
+
+    return md_lib.markdown(markdown_text, extensions=["tables"])
+
+
 def onepager_markdown(enterprise_number: str) -> str:
     from screen.report import onepager
 
@@ -432,63 +439,108 @@ def _identity_from_kbo(num: str) -> dict:
     }
 
 
-def individual_markdown(enterprise_number: str) -> str:
-    """Analyse van één bedrijf, ook buiten de thesis/longlist: KBO-identiteit
-    + alle lokale jaarrekeningcijfers en signalen. Valt terug op de volledige
-    one-pager (met peer-kwartielen) zodra het bedrijf in de longlist staat."""
-    num = normalize_number(enterprise_number)
-    try:
-        return onepager_markdown(num)   # rijkste variant: met peers en score
-    except ScreeningError:
-        pass
+def _fmt_pct(value: float | None) -> str:
+    return "—" if value is None else f"{value * 100:,.1f}%"
 
+
+def _fmt_ratio(value: float | None) -> str:
+    return "—" if value is None else f"{value:,.1f}x"
+
+
+def _company_metrics(num: str):
+    import polars as pl
+
+    metrics_path = pipeline_config.INTERIM_DIR / "metrics.parquet"
+    if not metrics_path.exists():
+        return pl.DataFrame()
+    return (
+        pl.read_parquet(metrics_path)
+        .filter(pl.col("enterprise_number") == num)
+        .sort("fiscal_year")
+    )
+
+
+def individual_markdown(enterprise_number: str, deposits: list[dict] | None = None,
+                        skipped: list[tuple[str, str]] | None = None) -> str:
+    """Individuele analyse van één bedrijf tegen zijn eigen gepubliceerde
+    cijfers: identiteit, databasis (welke neerleggingen, wat parste wel/niet),
+    kerncijfers per boekjaar, afgeleide ratio's en neerleggingsgedrag.
+    Bewust zonder peer-vergelijking: die hoort bij de pipeline-longlist."""
     import polars as pl
     from screen.report.onepager import REPORT_METRICS, _fmt
 
+    num = normalize_number(enterprise_number)
     identity = _identity_from_kbo(num)
     lines: list[str] = []
     add = lines.append
+
     add(f"# {identity.get('name') or 'Naam onbekend'} — {num}")
+    add("")
+    add("## Identiteit (KBO)")
     add("")
     add("| | |")
     add("|---|---|")
     add(f"| Ondernemingsnummer | {num} |")
     if identity:
-        nace_txt = identity["nace"] + (f" ({identity['nace_desc']})" if identity["nace_desc"] else "")
-        add(f"| Hoofd-NACE | {nace_txt or '—'} |")
+        nace_txt = identity["nace"] + (f" — {identity['nace_desc']}" if identity["nace_desc"] else "")
+        add(f"| Hoofdactiviteit | {nace_txt or '—'} |")
         add(f"| Rechtsvorm | {identity['juridical_form'] or '—'} |")
         add(f"| Gemeente | {identity['municipality'] or '—'} |")
-        add(f"| Status | {identity['status'] or '—'} |")
-        add(f"| Startdatum | {identity['start_date'] or '—'} |")
+        add(f"| Provincie | {identity['province'] or '—'} |")
+        add(f"| Status | {'actief' if identity['status'] == 'AC' else identity['status'] or '—'} |")
+        add(f"| Opgericht | {identity['start_date'] or '—'} |")
     else:
         add("| KBO-gegevens | niet lokaal beschikbaar (KBO-data nog niet geladen) |")
     add("")
-    add("> Dit bedrijf valt buiten de huidige thesis-longlist; peer-kwartielen "
-        "en scores zijn daarom niet van toepassing. Hieronder de lokaal "
-        "beschikbare jaarrekeningcijfers.")
-    add("")
 
-    add("## Genormaliseerde cijfers (max. 5 boekjaren)")
+    # ── databasis: wat hebben we, wat parste, wat niet ────────────────────
+    add("## Databasis")
     add("")
-    metrics_path = pipeline_config.INTERIM_DIR / "metrics.parquet"
-    company_metrics = pl.DataFrame()
-    if metrics_path.exists():
-        company_metrics = (
-            pl.read_parquet(metrics_path)
-            .filter(pl.col("enterprise_number") == num)
-            .sort("fiscal_year")
-        )
+    if deposits:
+        add(f"{len(deposits)} neerlegging(en) bij de NBB gevonden:")
+        add("")
+        add("| Referentie | Neergelegd | Boekjaar t.e.m. | Model | Formaat |")
+        add("|---|---|---|---|---|")
+        for d in deposits:
+            add(f"| {d['reference']} | {d['deposit_date'] or '—'} | "
+                f"{d['exercise_end'] or '—'} | {d['model_type'] or '—'} | "
+                f"{d['data_format']} |")
+        add("")
+        pdf_only = all(d["data_format"] != "JSON" for d in deposits)
+        if pdf_only:
+            add("> ⚠ Geen enkele neerlegging is als gestructureerde data (JSON) "
+                "beschikbaar — alleen PDF. Cijfers kunnen dan niet automatisch "
+                "gelezen worden; de PDF's zijn wel te downloaden op de "
+                "bedrijfsfiche.")
+            add("")
+    elif deposits is not None:
+        add("_Geen neerleggingen gevonden bij de NBB voor dit nummer._")
+        add("")
+    if skipped:
+        add("> ⚠ Niet verwerkt (parseerfout — technische oorzaak, geen oordeel "
+            "over het bedrijf):")
+        for name, reason in skipped:
+            add(f"> - {name}: {reason}")
+        add("")
+
+    # ── kerncijfers per boekjaar ──────────────────────────────────────────
+    add("## Kerncijfers per boekjaar")
+    add("")
+    company_metrics = _company_metrics(num)
+    years: list[int] = []
     if company_metrics.is_empty():
-        add("_Geen jaarrekeningdata lokaal — haal eerst de NBB-neerleggingen op "
-            "(knop 'Individuele screening' doet dit automatisch zodra er een "
-            "CBSO-key is ingesteld)._")
+        add("_Geen automatisch leesbare jaarrekeningcijfers beschikbaar (zie "
+            "Databasis hierboven voor de reden)._")
+        add("")
     else:
         years = company_metrics["fiscal_year"].to_list()[-5:]
         sub = company_metrics.filter(pl.col("fiscal_year").is_in(years))
         add("| Metric | " + " | ".join(str(y) for y in years) + " |")
         add("|---" * (len(years) + 1) + "|")
         estimates = False
-        for metric, label in REPORT_METRICS:
+        table_metrics = REPORT_METRICS + [("personnel_cost", "Personeelskosten"),
+                                          ("value_added", "Toegevoegde waarde (proxy)")]
+        for metric, label in table_metrics:
             if metric not in sub.columns:
                 continue
             cells = []
@@ -508,10 +560,66 @@ def individual_markdown(enterprise_number: str) -> str:
             add(f"| {label} | " + " | ".join(cells) + " |")
         add("")
         if estimates:
-            add("> *(schatting)* = afgeleide waarde, géén gepubliceerd feit.")
+            add("> *(schatting)* = afgeleide waarde (bv. omzetproxy uit "
+                "brutomarge), géén gepubliceerd feit.")
+            add("")
+
+        # ── afgeleide ratio's: feitelijke economische parameters ──────────
+        add("## Economische ratio's (berekend uit bovenstaande cijfers)")
+        add("")
+        add("| Ratio | " + " | ".join(str(y) for y in years) + " |")
+        add("|---" * (len(years) + 1) + "|")
+
+        by_year = {int(r["fiscal_year"]): r for r in sub.iter_rows(named=True)}
+
+        def ratio_row(label, fn, fmt):
+            cells = []
+            for y in years:
+                r = by_year.get(y)
+                cells.append(fmt(fn(r)) if r else "—")
+            add(f"| {label} | " + " | ".join(cells) + " |")
+
+        def _div(a, b):
+            if a is None or b in (None, 0):
+                return None
+            return a / b
+
+        ratio_row("EBITDA-marge", lambda r: _div(r.get("ebitda_proxy"), r.get("revenue")), _fmt_pct)
+        ratio_row("Solvabiliteit (EV/balans)", lambda r: _div(r.get("equity"), r.get("balance_total")), _fmt_pct)
+        ratio_row("Netto schuld / EBITDA",
+                  lambda r: _div(r.get("net_financial_debt"), r.get("ebitda_proxy"))
+                  if (r.get("ebitda_proxy") or 0) > 0 else None, _fmt_ratio)
+        ratio_row("Personeelskost / VTE (EUR)", lambda r: _div(r.get("personnel_cost"), r.get("fte")),
+                  lambda v: "—" if v is None else f"{v:,.0f}")
+        ratio_row("Klantendagen (DSO)", lambda r: r.get("dso_days"),
+                  lambda v: "—" if v is None else f"{v:,.0f}")
+        add("")
+
+        # groei over de beschikbare jaren
+        growth_basis = "revenue"
+        series = [(y, by_year[y].get("revenue")) for y in years
+                  if by_year.get(y, {}).get("revenue") is not None
+                  and by_year[y].get("revenue_source") != "estimate"]
+        if len(series) < 2:
+            growth_basis = "ebitda_proxy"
+            series = [(y, by_year[y].get("ebitda_proxy")) for y in years
+                      if by_year.get(y, {}).get("ebitda_proxy") is not None]
+        if len(series) >= 2 and series[0][1] and series[0][1] > 0 and series[-1][1] > 0:
+            span = series[-1][0] - series[0][0]
+            if span > 0:
+                cagr = (series[-1][1] / series[0][1]) ** (1 / span) - 1
+                label = "omzet" if growth_basis == "revenue" else "EBITDA-proxy"
+                add(f"**Groei ({label}, {series[0][0]}–{series[-1][0]}): "
+                    f"{cagr * 100:+.1f}% per jaar (CAGR)**")
+                add("")
+
+    add("> Peer-vergelijking maakt bewust geen deel uit van een individuele "
+        "analyse; kwartielen t.o.v. sectorgenoten vind je in de "
+        "screening-longlist van een dossier.")
     add("")
 
-    add("## Signalen")
+    # ── neerleggingsgedrag / signalen ─────────────────────────────────────
+    add("## Neerleggingsgedrag en signalen")
     add("")
     signals_path = pipeline_config.MARTS_DIR / "signals.parquet"
     company_signals = pl.DataFrame()
@@ -520,7 +628,8 @@ def individual_markdown(enterprise_number: str) -> str:
             pl.col("enterprise_number") == num
         )
     if company_signals.is_empty():
-        add("_Geen signalen geregistreerd._")
+        add("_Geen signalen geregistreerd (geen laattijdige neerleggingen, "
+            "modelwissels of correcties gedetecteerd in de beschikbare data)._")
     else:
         add("| Signaal | Waarde | Bron | Datum |")
         add("|---|---|---|---|")
@@ -531,6 +640,41 @@ def individual_markdown(enterprise_number: str) -> str:
     add("_Individuele screening — methodologie en aannames: docs/METHODOLOGY.md. "
         "Geschatte waarden zijn nooit feiten._")
     return "\n".join(lines)
+
+
+def ai_commentary(markdown_report: str, company_name: str) -> str | None:
+    """Optionele AI-interpretatie: Claude leest uitsluitend de berekende
+    cijfers hierboven en schrijft er een analistencommentaar bij. Faalt stil
+    (None) zonder key of bij een API-fout — de feiten staan er dan nog steeds."""
+    from ..config import ANTHROPIC_API_KEY
+
+    if not ANTHROPIC_API_KEY:
+        return None
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        message = client.messages.create(
+            model="claude-opus-5",
+            max_tokens=2500,
+            system=(
+                "Je bent een senior M&A-analist. Je krijgt een feitenrapport "
+                "over één Belgisch bedrijf (KBO-identiteit, jaarrekeningcijfers, "
+                "ratio's, neerleggingsgedrag). Schrijf in het Nederlands een "
+                "beknopt commentaar met exact deze koppen (##): Financiële "
+                "beoordeling, Sterktes, Aandachtspunten en risico's, Conclusie "
+                "vanuit overnameperspectief. Baseer je UITSLUITEND op de "
+                "aangeleverde cijfers; verzin niets bij. Benoem expliciet welke "
+                "informatie ontbreekt en wat als schatting gemarkeerd staat. "
+                "Wees concreet en zakelijk, geen holle frasen."
+            ),
+            messages=[{"role": "user", "content":
+                       f"Feitenrapport voor {company_name}:\n\n{markdown_report}"}],
+        )
+        text = "".join(b.text for b in message.content if b.type == "text").strip()
+        return text or None
+    except Exception:
+        return None
 
 
 def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> None:
@@ -553,6 +697,22 @@ def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> 
             except Exception as exc:
                 note = f"NBB-ophaling mislukt ({type(exc).__name__}: {exc}) — lokale data gebruikt"
 
+            from ..models import NbbDeposit
+
+            deposit_rows = (
+                db.query(NbbDeposit)
+                .filter(NbbDeposit.enterprise_number == num)
+                .order_by(NbbDeposit.deposit_date.desc())
+                .all()
+            )
+            deposits = [{
+                "reference": d.reference, "deposit_date": d.deposit_date,
+                "exercise_end": d.exercise_end, "model_type": d.model_type,
+                "data_format": d.data_format,
+            } for d in deposit_rows]
+            references = {d.reference for d in deposit_rows}
+
+            skipped: list[tuple[str, str]] = []
             copied = sync_deposits_to_pipeline(num)
             if copied:
                 _set_individual_status(f"bezig: {num} — cijfers herberekenen ...")
@@ -561,7 +721,10 @@ def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> 
                 from screen.peers import peer_set
                 from screen.signals import build_signals as sig
 
-                build_mod.build_facts(progress=lambda *_: None)
+                facts_result = build_mod.build_facts(progress=lambda *_: None)
+                # alleen de parseerfouten van dít bedrijf tonen
+                skipped = [(name, reason) for name, reason in facts_result.skipped
+                           if Path(name).stem in references]
                 ratio, ratio_note = None, ""
                 universe_path = pipeline_config.INTERIM_DIR / "universe.parquet"
                 if universe_path.exists():
@@ -576,12 +739,20 @@ def run_individual_screening_bg(enterprise_number: str, user_id: int | None) -> 
                 sig.build_signals(manual_path=manual, progress=lambda *_: None)
 
             _set_individual_status(f"bezig: {num} — rapport opstellen ...")
-            report = individual_markdown(num)
+            report = individual_markdown(num, deposits=deposits, skipped=skipped)
             if note:
                 report += f"\n\n> ⚠ {note}\n"
+
             identity = _identity_from_kbo(num)
-            save_analysis(db, num, identity.get("name", ""), "individueel",
-                          report, user_id)
+            name = identity.get("name", "")
+            _set_individual_status(f"bezig: {num} — AI-interpretatie schrijven ...")
+            commentary = ai_commentary(report, name or num)
+            if commentary:
+                report += ("\n\n# Interpretatie (AI-analist)\n\n"
+                           "> Automatisch commentaar, uitsluitend gebaseerd op de "
+                           "cijfers hierboven — geen vervanging van due diligence.\n\n"
+                           + commentary + "\n")
+            save_analysis(db, num, name, "individueel", report, user_id)
         finally:
             db.close()
         _set_individual_status(f"klaar: individuele screening van {num} bewaard")
