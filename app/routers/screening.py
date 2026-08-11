@@ -286,8 +286,12 @@ async def thesis_save(
             "signals": _num("weight_signals") or 0.0,
         },
     }
+    save_as = str(form.get("save_as", "")).strip()
     try:
-        thesis = screening.save_thesis(raw, key=thesis_key)
+        if save_as:
+            thesis_key = screening.save_thesis_as(raw, save_as)
+        else:
+            screening.save_thesis(raw, key=thesis_key)
     except (screening.ScreeningError, screening.pipeline_config.ThesisError,
             ValueError) as exc:
         return templates.TemplateResponse(
@@ -297,8 +301,22 @@ async def thesis_save(
              "provinces": sorted(screening.pipeline_config.VALID_PROVINCES),
              "error": str(exc)},
         )
-    log_action(db, user.id, "screening_thesis_saved", f"{thesis_key}: {thesis.name}")
-    return RedirectResponse("/screening", status_code=303)
+    log_action(db, user.id, "screening_thesis_saved", thesis_key)
+    return RedirectResponse(f"/screening/thesis?thesis={thesis_key}", status_code=303)
+
+
+@router.post("/thesis/delete")
+def thesis_delete(
+    thesis_key: str = Form(...),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    try:
+        screening.delete_thesis(thesis_key)
+        log_action(db, user.id, "screening_thesis_deleted", thesis_key)
+    except screening.ScreeningError:
+        pass
+    return RedirectResponse("/screening/thesis", status_code=303)
 
 
 # ── longlist en one-pager ────────────────────────────────────────────────────

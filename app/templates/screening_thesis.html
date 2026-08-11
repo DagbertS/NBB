@@ -96,9 +96,24 @@
       <input type="text" name="weight_signals" value="{{ weights.get('signals', 0.3) }}"></div>
   </div>
 
-  <p style="margin-top:1rem">
-    <button>Opslaan</button>
-    <span class="muted">Draai daarna opnieuw "Build &amp; rank" om de longlist op de nieuwe criteria te bouwen.</span>
-  </p>
+  <div style="margin-top:1.2rem; display:flex; gap:0.8rem; flex-wrap:wrap; align-items:end">
+    <button>Opslaan in "{{ thesis_key }}"</button>
+    <div style="flex:1; min-width:240px">
+      <label>…of opslaan als nieuwe set (naam)</label>
+      <input type="text" name="save_as" placeholder="bv. conservatief-2026">
+    </div>
+  </div>
+  <p class="muted" style="margin-top:0.5rem">Vul je een naam in, dan wordt een
+    nieuwe set met deze waarden aangemaakt en blijft "{{ thesis_key }}"
+    ongewijzigd. Draai daarna Build &amp; rank met de gewenste set.</p>
 </form>
+
+{% if thesis_key != 'standaard' %}
+<form method="post" action="/screening/thesis/delete" class="card"
+      onsubmit="return confirm('Criteria-set \'{{ thesis_key }}\' definitief verwijderen?')">
+  <input type="hidden" name="thesis_key" value="{{ thesis_key }}">
+  <button class="btn-danger btn-small">Verwijder deze criteria-set</button>
+  <span class="muted">Reeds gebouwde pipelines behouden hun resultaten; alleen de set zelf verdwijnt.</span>
+</form>
+{% endif %}
 {% endblock %}

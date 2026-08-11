@@ -139,12 +139,12 @@ def load_thesis(key: str = DEFAULT_THESIS_KEY) -> pipeline_config.Thesis:
     return pipeline_config.load_thesis(thesis_path_for(key))
 
 
-def save_thesis(raw: dict, key: str = DEFAULT_THESIS_KEY) -> pipeline_config.Thesis:
-    """Schrijf een criteria-set atomisch: eerst naar een tijdelijk bestand,
-    valideren met de pipeline-loader, en pas dan vervangen."""
+def _write_thesis(path: Path, raw: dict) -> pipeline_config.Thesis:
+    """Atomisch schrijven: eerst naar een tijdelijk bestand, valideren met
+    de pipeline-loader, en pas dan vervangen."""
     import yaml
 
-    path = thesis_path_for(key)
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(yaml.safe_dump(raw, sort_keys=False, allow_unicode=True))
     try:
@@ -154,6 +154,30 @@ def save_thesis(raw: dict, key: str = DEFAULT_THESIS_KEY) -> pipeline_config.The
         raise
     tmp.replace(path)
     return thesis
+
+
+def save_thesis(raw: dict, key: str = DEFAULT_THESIS_KEY) -> pipeline_config.Thesis:
+    return _write_thesis(thesis_path_for(key), raw)
+
+
+def save_thesis_as(raw: dict, name: str) -> str:
+    """Bewerkte criteria onder een nieuwe naam bewaren — zo hou je meerdere
+    thesissen naast elkaar bij. Zelfde naam = die set bijwerken."""
+    key = slugify_thesis(name)
+    if key in (DEFAULT_THESIS_KEY, "thesis"):
+        raise ScreeningError("Die naam is gereserveerd voor de standaardset — "
+                             "kies een andere naam")
+    _write_thesis(THESES_DIR / f"{key}.yaml", raw)
+    return key
+
+
+def delete_thesis(key: str) -> None:
+    key = (key or "").strip()
+    if key in (DEFAULT_THESIS_KEY, "thesis"):
+        raise ScreeningError("De standaardset kan niet verwijderd worden")
+    if not THESIS_KEY_RE.match(key):
+        raise ScreeningError(f"Ongeldige criteria-set: {key!r}")
+    (THESES_DIR / f"{key}.yaml").unlink(missing_ok=True)
 
 
 # ── databestanden: status en uploads ─────────────────────────────────────────
