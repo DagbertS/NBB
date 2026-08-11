@@ -74,6 +74,31 @@ def get_accounting_data(reference: str) -> dict | bytes:
         return resp.content
 
 
+def fetch_pdf(deposit) -> Path:
+    """Officiële PDF-versie van een neerlegging ophalen bij de NBB (en lokaal
+    cachen naast het JSON-bestand). Elke neerlegging bestaat ook als PDF —
+    dezelfde accountingData-endpoint met Accept: application/pdf."""
+    base_dir = Path(deposit.file_path).parent if deposit.file_path \
+        else Path(DOCUMENT_STORE) / _normalize_number(deposit.enterprise_number)
+    target = base_dir / f"{deposit.reference}.pdf"
+    if target.exists():
+        return target
+
+    url = f"{NBB_CBSO_BASE_URL}/deposit/{deposit.reference}/accountingData"
+    with httpx.Client(timeout=120) as client:
+        resp = client.get(url, headers=_headers("application/pdf"))
+        resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if "pdf" not in content_type:
+            raise CbsoError(
+                f"NBB gaf geen PDF terug voor {deposit.reference} "
+                f"(content-type: {content_type})"
+            )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(resp.content)
+    return target
+
+
 def probe_accounting_data(reference: str) -> str:
     """Diagnose: wat antwoordt de API letterlijk op een JSON-XBRL-vraag voor
     deze referentie? Gebruikt om in het rapport te tonen waarom een

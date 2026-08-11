@@ -44,19 +44,21 @@
   <form method="post" action="/nbb/fetch/{{ enterprise_number }}" style="display:inline">
     <button type="submit">Ophalen bij NBB</button>
   </form>
-  <a class="btn btn-secondary" href="/nbb/report/{{ enterprise_number }}">Genereer analyserapport</a>
 
   {% if deposits %}
   <div class="table-wrap" style="margin-top:0.8rem"><table>
-    <tr><th>Referentie</th><th>Neergelegd</th><th>Boekjaar t.e.m.</th><th>Model</th><th>Formaat</th><th></th></tr>
+    <tr><th>Referentie</th><th>Neergelegd</th><th>Boekjaar t.e.m.</th><th>Model</th><th></th></tr>
     {% for d in deposits %}
     <tr>
       <td>{{ d.reference }}</td>
       <td>{{ d.deposit_date or "—" }}</td>
       <td>{{ d.exercise_end or "—" }}</td>
       <td>{{ d.model_type or "—" }}</td>
-      <td>{{ d.data_format }}</td>
-      <td><a class="btn btn-small" href="/nbb/document/{{ d.id }}">Download</a></td>
+      <td>
+        <a class="btn btn-small" href="/nbb/document/{{ d.id }}/pdf">PDF</a>
+        <a class="btn btn-small btn-secondary" href="/nbb/document/{{ d.id }}"
+           title="Ruwe data zoals neergelegd ({{ d.data_format }})">{{ d.data_format }}</a>
+      </td>
     </tr>
     {% endfor %}
   </table></div>
