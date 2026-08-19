@@ -6,9 +6,22 @@
   <form method="post" action="/lists/{{ l.id }}/fetch-nbb" style="display:inline">
     <button type="submit">Haal NBB-documenten op voor alle bedrijven</button>
   </form>
+  <form method="post" action="/lists/{{ l.id }}/check-nbb" style="display:inline">
+    <button type="submit" class="btn-secondary"
+            title="Vergelijkt per bedrijf de NBB-referentielijst met wat lokaal aanwezig is en haalt alleen ontbrekende of kapotte documenten opnieuw op">
+      Controleer &amp; vul aan (delta)</button>
+  </form>
   <p class="muted" style="margin-top:0.4rem">
     Het ophalen loopt op de achtergrond, één bedrijf per keer. Herlaad de pagina om de status te zien.
+    "Controleer &amp; vul aan" loopt álle bedrijven na — ook wie al als opgehaald staat — en downloadt enkel wat ontbreekt.
   </p>
+  {% if check_status %}
+    <p>Controle:
+      {% if check_status.startswith('bezig') %}<span class="badge">{{ check_status }}</span>
+      {% elif check_status.startswith('fout') %}<span class="badge err">{{ check_status }}</span>
+      {% else %}<span class="badge ok">{{ check_status }}</span>{% endif %}
+    </p>
+  {% endif %}
 
   <div class="table-wrap"><table>
     <tr><th>Nummer</th><th>Naam</th><th>NACE</th><th>Postcode</th><th>Gemeente</th><th>NBB-documenten</th></tr>

@@ -120,6 +120,111 @@ def probe_accounting_data(reference: str) -> str:
         return f"probe mislukt: {type(exc).__name__}: {exc}"
 
 
+def _ref_fields(ref: dict) -> tuple[str, str, str]:
+    """(deposit_date, exercise_end, model_type) uit een referentie-record."""
+    deposit_date = str(ref.get("DepositDate") or ref.get("depositDate") or "")
+    exercise_end = str(
+        ref.get("ExerciseDates", {}).get("endDate", "")
+        if isinstance(ref.get("ExerciseDates"), dict)
+        else ref.get("exerciseEndDate", "")
+    )
+    model_type = str(ref.get("ModelType") or ref.get("modelType") or "")
+    return deposit_date, exercise_end, model_type
+
+
+def _file_ok(deposit: NbbDeposit) -> bool:
+    """Staat het document van deze neerlegging echt bruikbaar op de schijf?"""
+    if not deposit.file_path:
+        return False
+    path = Path(deposit.file_path)
+    try:
+        if not path.exists() or path.stat().st_size == 0:
+            return False
+        if path.suffix.lower() == ".json":
+            json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    return True
+
+
+def verify_and_repair(db: Session, enterprise_number: str) -> dict:
+    """Vergelijk de NBB-referentielijst met wat lokaal aanwezig is en haal
+    alléén het ontbrekende of kapotte opnieuw op (delta).
+
+    Herstelt de gevallen die bij een eerste ophaling stil konden mislukken:
+    een referentie zonder databaserij, een rij waarvan het bestand van de
+    schijf verdween, of een leeg/corrupt JSON-bestand. Mislukkingen worden
+    per referentie met reden teruggegeven — nooit stilzwijgend overgeslagen.
+    """
+    import time
+
+    num = _normalize_number(enterprise_number)
+    references = get_references(num)
+    target_dir = Path(DOCUMENT_STORE) / num
+    result: dict = {"references": 0, "ok": 0, "added": 0, "repaired": 0,
+                    "failed": []}
+
+    for ref in references:
+        reference = str(ref.get("ReferenceNumber") or ref.get("reference")
+                        or ref.get("id") or "")
+        if not reference:
+            continue
+        result["references"] += 1
+        row = db.query(NbbDeposit).filter_by(reference=reference).first()
+        if row is not None and _file_ok(row):
+            result["ok"] += 1
+            continue
+
+        data = None
+        for attempt in (1, 2):
+            try:
+                data = get_accounting_data(reference)
+                break
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code
+                if status == 429 and attempt == 1:
+                    time.sleep(30)   # NBB-tempolimiet: even wachten en opnieuw
+                    continue
+                body = " ".join(exc.response.text[:150].split())
+                result["failed"].append(
+                    (reference, f"HTTP {status}" + (f" — {body}" if body else ""))
+                )
+                break
+            except httpx.HTTPError as exc:
+                result["failed"].append((reference, f"{type(exc).__name__}: {exc}"))
+                break
+        if data is None:
+            continue
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        if isinstance(data, (dict, list)):
+            file_path = target_dir / f"{reference}.json"
+            file_path.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+            data_format = "JSON"
+        else:
+            file_path = target_dir / f"{reference}.pdf"
+            file_path.write_bytes(data)
+            data_format = "PDF"
+
+        deposit_date, exercise_end, model_type = _ref_fields(ref)
+        if row is None:
+            row = NbbDeposit(enterprise_number=num, reference=reference)
+            db.add(row)
+            result["added"] += 1
+        else:
+            result["repaired"] += 1
+        row.deposit_date = deposit_date
+        row.exercise_end = exercise_end
+        row.model_type = model_type
+        row.data_format = data_format
+        row.file_path = str(file_path)
+        row.raw_json = json.dumps(ref, ensure_ascii=False)
+        row.fetched_at = datetime.utcnow()
+        db.commit()
+        time.sleep(0.4)   # rustig tempo richting de NBB-API
+    return result
+
+
 def fetch_and_store(db: Session, enterprise_number: str) -> list[NbbDeposit]:
     """Haal alle neerleggingen van een onderneming op en sla ze lokaal op.
 

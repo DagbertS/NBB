@@ -67,8 +67,123 @@ def list_detail(
                   for item in company_list.items}
     return templates.TemplateResponse(
         request, "list_detail.html",
-        {"user": user, "l": company_list, "nbb_counts": nbb_counts}
+        {"user": user, "l": company_list, "nbb_counts": nbb_counts,
+         "check_status": _get_list_status(list_id)}
     )
+
+
+def _set_list_status(list_id: int, text: str) -> None:
+    """Voortgang van de lijst-controle, schrijfbaar vanuit een achtergrondthread
+    (zelfde patroon als de screening-status)."""
+    import sqlite3
+
+    from ..config import DATABASE_PATH
+
+    with sqlite3.connect(DATABASE_PATH, timeout=60) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT DEFAULT '')"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (f"nbb_check_{list_id}", text),
+        )
+        conn.commit()
+
+
+def _get_list_status(list_id: int) -> str:
+    import sqlite3
+
+    from ..config import DATABASE_PATH
+
+    try:
+        with sqlite3.connect(DATABASE_PATH, timeout=60) as conn:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = ?", (f"nbb_check_{list_id}",)
+            ).fetchone()
+        return row[0] if row else ""
+    except sqlite3.OperationalError:
+        return ""
+
+
+def _verify_list_nbb(list_id: int) -> None:
+    """Achtergrondtaak: vergelijk per bedrijf de NBB-referentielijst met wat
+    lokaal echt op de schijf staat en haal alléén het ontbrekende of kapotte
+    opnieuw op (delta). Herstelt bedrijven die als 'opgehaald' staan terwijl
+    er documenten ontbreken."""
+    import logging
+    import time
+
+    import httpx
+
+    from ..services.cbso_client import verify_and_repair
+
+    log = logging.getLogger(__name__)
+    db = SessionLocal()
+    try:
+        items = (
+            db.query(CompanyListItem)
+            .filter(CompanyListItem.list_id == list_id)
+            .all()
+        )
+        total = len(items)
+        added = repaired = gaps = 0
+        for i, item in enumerate(items, 1):
+            _set_list_status(
+                list_id,
+                f"bezig: controle {i}/{total} — "
+                f"{item.name or item.enterprise_number}",
+            )
+            for attempt in (1, 2):
+                try:
+                    result = verify_and_repair(db, item.enterprise_number)
+                except httpx.HTTPStatusError as exc:
+                    status = exc.response.status_code
+                    if status == 429 and attempt == 1:
+                        time.sleep(30)   # NBB-tempolimiet: wachten en opnieuw
+                        continue
+                    item.nbb_status = "error"
+                    item.nbb_error = f"HTTP {status} van de NBB bij de referentielijst"
+                    gaps += 1
+                except Exception as exc:
+                    item.nbb_status = "error"
+                    item.nbb_error = f"{type(exc).__name__}: {exc}"[:300]
+                    gaps += 1
+                else:
+                    added += result["added"]
+                    repaired += result["repaired"]
+                    have = result["ok"] + result["added"] + result["repaired"]
+                    if result["references"] == 0:
+                        item.nbb_status = "none"
+                        item.nbb_error = ""
+                    elif result["failed"]:
+                        ref, reason = result["failed"][0]
+                        item.nbb_status = "fetched" if have else "error"
+                        item.nbb_error = (
+                            f"{len(result['failed'])} van {result['references']} "
+                            f"referenties niet ophaalbaar — bv. {ref}: {reason}"
+                        )[:300]
+                        gaps += 1
+                    else:
+                        item.nbb_status = "fetched"
+                        item.nbb_error = ""
+                if item.nbb_error:
+                    log.warning("NBB-controle %s: %s", item.enterprise_number,
+                                item.nbb_error)
+                break
+            item.nbb_fetched_at = datetime.utcnow()
+            db.commit()
+            time.sleep(1.0)   # rustig tempo richting de NBB-API
+        _set_list_status(
+            list_id,
+            f"klaar: {total} bedrijven gecontroleerd — {added} document(en) "
+            f"toegevoegd, {repaired} hersteld, {gaps} bedrijf(ven) met "
+            "resterende problemen",
+        )
+    except Exception as exc:
+        _set_list_status(list_id, f"fout: {type(exc).__name__}: {exc}"[:300])
+        raise
+    finally:
+        db.close()
 
 
 def _fetch_list_from_nbb(list_id: int) -> None:
@@ -138,6 +253,19 @@ async def fetch_nbb(
     if not next_url.startswith("/"):
         next_url = f"/lists/{list_id}"
     return RedirectResponse(next_url, status_code=303)
+
+
+@router.post("/lists/{list_id}/check-nbb")
+def check_nbb(
+    list_id: int,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _get_list(db, list_id, user)
+    background_tasks.add_task(_verify_list_nbb, list_id)
+    log_action(db, user.id, "check_nbb_list", str(list_id))
+    return RedirectResponse(f"/lists/{list_id}", status_code=303)
 
 
 @router.post("/lists/{list_id}/delete")
