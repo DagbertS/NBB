@@ -81,6 +81,11 @@ ARCHIVE_URL_CANDIDATES = [
     "https://ws.cbso.nbb.be/authenticarchive",
     "https://ws.cbso.nbb.be/archive-authentic",
     "https://ws.cbso.nbb.be/historical",
+    # afgeleid van de interne productnaam "AuthenticArchiveData"
+    "https://ws.cbso.nbb.be/authenticarchivedata",
+    "https://ws.cbso.nbb.be/AuthenticArchiveData",
+    "https://ws.cbso.nbb.be/archivedata",
+    "https://ws.cbso.nbb.be/archive-data",
 ]
 
 ARCHIVE_URL_SETTING = "cbso_archive_url"
