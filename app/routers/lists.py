@@ -65,10 +65,63 @@ def list_detail(
             counts[number] = count
     nbb_counts = {item.id: counts.get(_norm(item.enterprise_number), 0)
                   for item in company_list.items}
+    error_summary = _error_summary(company_list.items)
     return templates.TemplateResponse(
         request, "list_detail.html",
         {"user": user, "l": company_list, "nbb_counts": nbb_counts,
-         "check_status": _get_list_status(list_id)}
+         "check_status": _get_list_status(list_id),
+         "error_summary": error_summary}
+    )
+
+
+def _error_reason(err: str) -> str:
+    """Herleid een per-bedrijf foutmelding tot de kern, zodat identieke
+    oorzaken gegroepeerd kunnen worden (referentienummers en aantallen eruit)."""
+    import re
+
+    m = re.search(r"— bv\. [^:]+: (.+)$", err)
+    reason = m.group(1) if m else err
+    reason = re.sub(r"[0-9a-fA-F-]{8,}", "…", reason)   # request-ids e.d.
+    return " ".join(reason.split())[:180]
+
+
+def _error_summary(items) -> list[tuple[str, int]]:
+    """Gegroepeerde foutredenen over alle bedrijven van de lijst, meest
+    voorkomende eerst."""
+    from collections import Counter
+
+    counter = Counter(
+        _error_reason(item.nbb_error) for item in items if item.nbb_error
+    )
+    return counter.most_common()
+
+
+@router.get("/lists/{list_id}/errors.csv")
+def errors_csv(
+    list_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Alle bedrijven met een resterend NBB-probleem, met de volledige
+    foutreden — handig om te delen of verder te analyseren."""
+    import csv
+    import io
+
+    from fastapi.responses import Response
+
+    company_list = _get_list(db, list_id, user)
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter=";")
+    writer.writerow(["ondernemingsnummer", "naam", "nbb_status", "foutreden"])
+    for item in company_list.items:
+        if item.nbb_error:
+            writer.writerow([item.enterprise_number, item.name,
+                             item.nbb_status, item.nbb_error])
+    return Response(
+        buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition":
+                 f'attachment; filename="lijst_{list_id}_nbb_fouten.csv"'},
     )
 
 

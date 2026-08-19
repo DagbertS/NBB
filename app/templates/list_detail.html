@@ -23,6 +23,18 @@
     </p>
   {% endif %}
 
+  {% if error_summary %}
+  <h2 style="margin-top:1rem">Resterende problemen, samengevat</h2>
+  <p class="muted">Identieke foutredenen zijn gegroepeerd (aantal bedrijven × reden).
+    <a href="/lists/{{ l.id }}/errors.csv">Download alle fouten als CSV</a></p>
+  <div class="table-wrap"><table>
+    <tr><th>Bedrijven</th><th>Foutreden</th></tr>
+    {% for reason, count in error_summary %}
+    <tr><td>{{ count }}</td><td>{{ reason }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+
   <div class="table-wrap"><table>
     <tr><th>Nummer</th><th>Naam</th><th>NACE</th><th>Postcode</th><th>Gemeente</th><th>NBB-documenten</th></tr>
     {% for item in l.items %}
