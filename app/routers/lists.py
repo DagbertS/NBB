@@ -181,7 +181,7 @@ def _verify_list_nbb(list_id: int) -> None:
             .all()
         )
         total = len(items)
-        added = repaired = gaps = 0
+        added = repaired = gaps = unavailable = 0
         for i, item in enumerate(items, 1):
             _set_list_status(
                 list_id,
@@ -207,6 +207,8 @@ def _verify_list_nbb(list_id: int) -> None:
                     added += result["added"]
                     repaired += result["repaired"]
                     have = result["ok"] + result["added"] + result["repaired"]
+                    un = result.get("unavailable", [])
+                    unavailable += len(un)
                     if result["references"] == 0:
                         item.nbb_status = "none"
                         item.nbb_error = ""
@@ -219,8 +221,14 @@ def _verify_list_nbb(list_id: int) -> None:
                         )[:500]
                         gaps += 1
                     else:
-                        item.nbb_status = "fetched"
+                        item.nbb_status = "fetched" if have else "none"
                         item.nbb_error = ""
+                    # géén fout maar een feit over de bron: eerlijk tonen
+                    # zonder het als probleem te tellen
+                    item.nbb_note = (
+                        f"{len(un)} referentie(s) zonder opvraagbaar document "
+                        f"bij de NBB — bv. {un[0][0]}: {un[0][1]}"
+                    )[:500] if un else ""
                 if item.nbb_error:
                     log.warning("NBB-controle %s: %s", item.enterprise_number,
                                 item.nbb_error)
@@ -231,8 +239,9 @@ def _verify_list_nbb(list_id: int) -> None:
         _set_list_status(
             list_id,
             f"klaar: {total} bedrijven gecontroleerd — {added} document(en) "
-            f"toegevoegd, {repaired} hersteld, {gaps} bedrijf(ven) met "
-            "resterende problemen",
+            f"toegevoegd, {repaired} hersteld, {unavailable} referentie(s) "
+            "zonder document bij de NBB (geen fout), "
+            f"{gaps} bedrijf(ven) met resterende problemen",
         )
     except Exception as exc:
         _set_list_status(list_id, f"fout: {type(exc).__name__}: {exc}"[:300])

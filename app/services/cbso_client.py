@@ -431,7 +431,7 @@ def verify_and_repair(db: Session, enterprise_number: str) -> dict:
     references = get_references(num)
     target_dir = Path(DOCUMENT_STORE) / num
     result: dict = {"references": 0, "ok": 0, "added": 0, "repaired": 0,
-                    "failed": []}
+                    "failed": [], "unavailable": []}
 
     for ref in references:
         reference = str(ref.get("ReferenceNumber") or ref.get("reference")
@@ -460,7 +460,13 @@ def verify_and_repair(db: Session, enterprise_number: str) -> dict:
                 )
                 break
             except CbsoError as exc:
-                result["failed"].append((reference, str(exc)))
+                msg = str(exc)
+                # "No deposit found" e.d.: het document bestáát niet bij de
+                # NBB (vaak vervangen of geannuleerde neerleggingen) — dat is
+                # informatie over de bron, geen op te lossen fout
+                bucket = "unavailable" \
+                    if msg.startswith("document niet beschikbaar") else "failed"
+                result[bucket].append((reference, msg))
                 break
             except httpx.HTTPError as exc:
                 result["failed"].append((reference, f"{type(exc).__name__}: {exc}"))

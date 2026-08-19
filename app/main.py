@@ -53,6 +53,10 @@ def _migrate() -> None:
             conn.execute(text("ALTER TABLE company_list_items "
                               "ADD COLUMN nbb_error TEXT DEFAULT ''"))
             conn.commit()
+        if cols and "nbb_note" not in cols:
+            conn.execute(text("ALTER TABLE company_list_items "
+                              "ADD COLUMN nbb_note TEXT DEFAULT ''"))
+            conn.commit()
 
 
 @asynccontextmanager

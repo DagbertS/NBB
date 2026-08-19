@@ -53,6 +53,9 @@
           {% if item.nbb_error %}<br><span class="muted" style="font-size:0.78rem">{{ item.nbb_error[:120] }}</span>{% endif %}
         {% elif item.nbb_status == 'none' %}<span class="badge">geen neerleggingen</span>
         {% else %}<span class="badge">nog niet opgehaald</span>{% endif %}
+        {% if item.nbb_note %}
+          <br><span class="muted" style="font-size:0.78rem" title="{{ item.nbb_note }}">ℹ {{ item.nbb_note[:120] }}</span>
+        {% endif %}
       </td>
     </tr>
     {% endfor %}
