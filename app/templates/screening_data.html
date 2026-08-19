@@ -63,22 +63,47 @@ de screening-pipeline en de individuele screenings.</p>
     Probeert de mogelijke adressen van de "Authentic Archive Data"-service op een
     neerlegging van vóór april 2022 en onthoudt automatisch het adres dat werkt.
   </p>
+  <form method="post" action="/screening/data/archive-url"
+        style="display:flex; gap:0.5rem; align-items:end; margin-top:0.6rem; flex-wrap:wrap">
+    <div style="flex:1; min-width:320px">
+      <label>Archief-adres handmatig instellen</label>
+      <input type="text" name="base_url" placeholder="https://ws.cbso.nbb.be/…"
+             value="{{ archive_url }}">
+    </div>
+    <button type="submit" class="btn-secondary">Bewaar adres</button>
+  </form>
+  <p class="muted" style="margin-top:0.3rem">
+    Vind je het juiste adres in het CBSO developer-portaal (developer.cbso.nbb.be →
+    APIs → Authentic Archive Data → een operatie openen: daar staat de request-URL)?
+    Plak het hier — een volledige voorbeeld-URL mag ook, de operatie wordt er
+    automatisch afgeknipt.
+  </p>
   {% endif %}
 
-  {% if archive_probe %}
+  {% if archive_probe and archive_probe.results %}
   <h3 style="margin-top:0.8rem">Laatste archief-verbindingstest</h3>
+  {% if archive_probe.reference %}
+  <p class="muted">Getest op referentie <code>{{ archive_probe.reference }}</code>
+    van onderneming {{ archive_probe.enterprise_number }}.</p>
+  {% endif %}
   <div class="table-wrap"><table>
     <tr><th>Adres</th><th>Antwoord</th><th>Details</th></tr>
-    {% for r in archive_probe %}
+    {% for r in archive_probe.results %}
     <tr>
       <td><code>{{ r.label }}</code></td>
       <td>{% if r.works %}<span class="badge ok">werkt (HTTP {{ r.status }})</span>
+          {% elif r.status == 401 %}<span class="badge">HTTP 401 — pad bestaat, key geen toegang</span>
           {% elif r.status %}<span class="badge err">HTTP {{ r.status }}</span>
           {% else %}<span class="badge err">geen verbinding</span>{% endif %}</td>
       <td>{{ r.content_type }} {{ r.snippet }}</td>
     </tr>
     {% endfor %}
   </table></div>
+  {% if archive_probe.raw_ref %}
+  <p class="muted" style="margin-top:0.4rem">Ruw referentie-record van deze oude
+    neerlegging (zoals de NBB het teruggeeft):</p>
+  <pre style="white-space:pre-wrap; overflow-wrap:anywhere; font-size:0.78rem">{{ archive_probe.raw_ref }}</pre>
+  {% endif %}
   {% endif %}
 </div>
 

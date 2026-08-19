@@ -102,16 +102,19 @@ def _data_context(request: Request, user: User, db: Session,
     }
 
 
-def _load_archive_probe(db: Session) -> list:
+def _load_archive_probe(db: Session) -> dict:
     import json
 
     from ..models import Setting
 
     raw = (db.get(Setting, "cbso_archive_probe") or Setting(value="")).value
     try:
-        return json.loads(raw) if raw else []
+        data = json.loads(raw) if raw else {}
     except json.JSONDecodeError:
-        return []
+        return {}
+    if isinstance(data, list):   # oudere opslag: alleen de resultatenlijst
+        data = {"results": data}
+    return data
 
 
 @router.post("/data/test-archive")
@@ -128,10 +131,14 @@ def test_archive(
 
     error = notice = ""
     try:
-        num, reference = cbso_client.find_archived_reference(db)
+        num, reference, raw_ref = cbso_client.find_archived_reference(db)
         results = cbso_client.probe_archive_candidates(reference)
         setting = db.get(Setting, "cbso_archive_probe") or Setting(key="cbso_archive_probe")
-        setting.value = json.dumps(results, ensure_ascii=False)
+        setting.value = json.dumps(
+            {"reference": reference, "enterprise_number": num,
+             "raw_ref": json.dumps(raw_ref, ensure_ascii=False)[:600],
+             "results": results},
+            ensure_ascii=False)
         db.merge(setting)
         db.commit()
         working = [r for r in results if r["works"]]
@@ -149,6 +156,36 @@ def test_archive(
     except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
     log_action(db, user.id, "cbso_archive_probe", notice or error)
+    return templates.TemplateResponse(
+        request, "screening_data.html",
+        _data_context(request, user, db, error=error, notice=notice),
+    )
+
+
+@router.post("/data/archive-url")
+def set_archive_url(
+    request: Request,
+    base_url: str = Form(""),
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Handmatig het basisadres van de archief-service instellen — bv. het
+    adres dat het CBSO developer-portaal bij de 'Authentic Archive
+    Data'-operaties toont."""
+    error = notice = ""
+    base_url = base_url.strip().rstrip("/")
+    # ook een volledige voorbeeld-URL uit het portaal mag: knip de operatie eraf
+    for marker in ("/deposit/", "/legalEntity/"):
+        if marker in base_url:
+            base_url = base_url.split(marker)[0]
+    if not base_url.startswith("https://"):
+        error = "geef een adres dat met https:// begint"
+    else:
+        cbso_client.save_archive_url(base_url)
+        notice = (f"archief-adres ingesteld op {base_url} — draai 'Test "
+                  "archief-verbinding' om het te controleren, of meteen "
+                  "'Controleer & vul aan (delta)' op je lijsten")
+        log_action(db, user.id, "cbso_archive_url_set", base_url)
     return templates.TemplateResponse(
         request, "screening_data.html",
         _data_context(request, user, db, error=error, notice=notice),

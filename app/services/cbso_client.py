@@ -76,6 +76,11 @@ ARCHIVE_URL_CANDIDATES = [
     "https://ws.cbso.nbb.be/archives",
     "https://ws.cbso.nbb.be/authentic/archive",
     "https://ws.cbso.nbb.be/authentic-archive-data",
+    "https://ws.cbso.nbb.be/archived",
+    "https://ws.cbso.nbb.be/authentic-archived",
+    "https://ws.cbso.nbb.be/authenticarchive",
+    "https://ws.cbso.nbb.be/archive-authentic",
+    "https://ws.cbso.nbb.be/historical",
 ]
 
 ARCHIVE_URL_SETTING = "cbso_archive_url"
@@ -116,10 +121,12 @@ def save_archive_url(base_url: str) -> None:
         conn.commit()
 
 
-def find_archived_reference(db: Session) -> tuple[str, str]:
+def find_archived_reference(db: Session) -> tuple[str, str, dict]:
     """Zoek een echte archief-referentie (neergelegd vóór april 2022) om de
     verbindingstest op te draaien. Kijkt bij bedrijven met een resterende
-    fout en geeft (ondernemingsnummer, referentie) terug."""
+    fout en geeft (ondernemingsnummer, referentie, ruw referentie-record)
+    terug — dat ruwe record toont hoe oude referenties eruitzien en of er
+    bv. een rechtstreekse document-URL in staat."""
     from ..models import CompanyListItem
 
     items = (
@@ -139,7 +146,7 @@ def find_archived_reference(db: Session) -> tuple[str, str]:
                             or ref.get("id") or "")
             deposit_date, _, _ = _ref_fields(ref)
             if reference and deposit_date[:7] and deposit_date[:7] < "2022-04":
-                return num, reference
+                return num, reference, ref
     raise CbsoError(
         "geen archief-referentie gevonden om mee te testen — geen bedrijf "
         "met een resterende fout heeft een neerlegging van vóór april 2022"
@@ -161,6 +168,10 @@ def probe_archive_candidates(reference: str) -> list[dict]:
     # misschien is het pad gewoon dat van de hoofdservice, met de archief-key
     candidates.append((f"{NBB_CBSO_BASE_URL} (met archief-key)",
                        NBB_CBSO_BASE_URL, NBB_CBSO_ARCHIVE_KEY))
+    # en de hoofdservice met de gewone key: het vólledige antwoord (incl. de
+    # validatie-boodschap) vertelt waaróm een oude referentie daar 404 geeft
+    candidates.append((f"{NBB_CBSO_BASE_URL} (met hoofd-key)",
+                       NBB_CBSO_BASE_URL, NBB_CBSO_SUBSCRIPTION_KEY))
 
     results = []
     with httpx.Client(timeout=30) as client:
@@ -170,7 +181,7 @@ def probe_archive_candidates(reference: str) -> list[dict]:
                 resp = client.get(url,
                                   headers=_headers("application/x.jsonxbrl", key))
                 snippet = "" if resp.status_code == 200 \
-                    else " ".join(resp.text[:120].split())
+                    else " ".join(resp.text[:400].split())
                 results.append({
                     "label": label, "base": base, "status": resp.status_code,
                     "content_type": resp.headers.get("content-type", ""),
