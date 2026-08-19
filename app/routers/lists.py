@@ -84,7 +84,7 @@ def _error_reason(err: str) -> str:
     reason = re.sub(r"/deposit/[^/]+/", "/deposit/…/", reason)   # referenties
     reason = re.sub(r"[0-9a-fA-F-]{8,}", "…", reason)   # request-ids e.d.
     reason = re.sub(r"\d{1,2}:\d{2}(:\d{2})?", "…", reason)   # tijdstempels
-    return " ".join(reason.split())[:180]
+    return " ".join(reason.split())[:300]
 
 
 def _error_summary(items) -> list[tuple[str, int]]:
@@ -216,7 +216,7 @@ def _verify_list_nbb(list_id: int) -> None:
                         item.nbb_error = (
                             f"{len(result['failed'])} van {result['references']} "
                             f"referenties niet ophaalbaar — bv. {ref}: {reason}"
-                        )[:300]
+                        )[:500]
                         gaps += 1
                     else:
                         item.nbb_status = "fetched"

@@ -252,6 +252,28 @@ def _get_accounting_from(base_url: str, key: str | None,
         )
 
 
+def _extract_error_detail(resp: httpx.Response) -> str:
+    """Compacte, vólledige foutuitleg uit een NBB-antwoord: de
+    violation-boodschappen als die er zijn, anders message/title, anders een
+    stukje ruwe tekst."""
+    try:
+        data = resp.json()
+    except ValueError:
+        return " ".join(resp.text[:200].split())
+    if isinstance(data, dict):
+        msgs = []
+        for v in data.get("violations") or []:
+            if isinstance(v, dict):
+                msg = v.get("defaultMessage") or v.get("message") or v.get("field")
+                if msg:
+                    msgs.append(str(msg))
+        if msgs:
+            return "; ".join(msgs)
+        return str(data.get("message") or data.get("title")
+                   or " ".join(resp.text[:200].split()))
+    return " ".join(resp.text[:200].split())
+
+
 def _get_pdf_operation(base_url: str, key: str | None,
                        reference: str) -> bytes:
     """Aparte 'PDF representation'-operatie uit de technische gids — oudere
@@ -287,7 +309,7 @@ def get_accounting_data(reference: str) -> dict | bytes:
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code != 404:
             raise
-        detail = " ".join(exc.response.text[:300].split())
+        detail = _extract_error_detail(exc.response)
 
         try:
             return _get_pdf_operation(NBB_CBSO_BASE_URL,
@@ -303,11 +325,9 @@ def get_accounting_data(reference: str) -> dict | bytes:
                 pass
 
         raise CbsoError(
-            "niet ophaalbaar: accountingData gaf HTTP 404 "
-            f"({detail or 'zonder detail'}); ook de pdf-operatie en de "
-            "archief-service gaven geen document — draai 'Test "
-            "archief-verbinding' op de pagina Data & integraties voor de "
-            "volledige diagnose"
+            f"document niet beschikbaar bij de NBB — de NBB zegt: "
+            f"\"{detail or 'HTTP 404 zonder detail'}\" (ook als PDF en via "
+            "het archief niet verkrijgbaar)"
         ) from exc
 
 
@@ -434,7 +454,7 @@ def verify_and_repair(db: Session, enterprise_number: str) -> dict:
                 if status == 429 and attempt == 1:
                     time.sleep(30)   # NBB-tempolimiet: even wachten en opnieuw
                     continue
-                body = " ".join(exc.response.text[:150].split())
+                body = _extract_error_detail(exc.response)
                 result["failed"].append(
                     (reference, f"HTTP {status}" + (f" — {body}" if body else ""))
                 )
