@@ -38,6 +38,10 @@ de screening-pipeline en de individuele screenings.</p>
       {% if has_cbso_key %}<span class="badge ok">key ingesteld</span>
       {% else %}<span class="badge err">geen key — stel NBB_CBSO_SUBSCRIPTION_KEY in bij de omgevingsvariabelen</span>{% endif %}
     </li>
+    <li>NBB CBSO — archief, neerleggingen vóór april 2022 ("Authentic Archive Data"):
+      {% if has_archive_key %}<span class="badge ok">key ingesteld</span>
+      {% else %}<span class="badge err">geen key — stel NBB_CBSO_ARCHIVE_KEY in; zonder deze key blijven oudere jaarrekeningen onbereikbaar</span>{% endif %}
+    </li>
     <li>NBB CBSO — daily extract ("Extracts"):
       {% if has_extract_key %}<span class="badge ok">key ingesteld</span>
       {% else %}<span class="badge err">geen key — stel NBB_CBSO_EXTRACT_KEY in</span>{% endif %}

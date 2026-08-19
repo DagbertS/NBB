@@ -23,12 +23,20 @@ KBO_OPEN_DATA_URL = "https://kbopub.economie.fgov.be/kbo-open-data"
 
 # De NBB geeft per product een eigen subscription key:
 # - NBB_CBSO_SUBSCRIPTION_KEY: product "Authentic Data" (jaarrekeningen per
-#   bedrijf raadplegen — individuele screenings en pipeline)
+#   bedrijf raadplegen — individuele screenings en pipeline; dekt alleen
+#   neerleggingen op het nieuwe CBSO-platform, sinds april 2022)
+# - NBB_CBSO_ARCHIVE_KEY: product "Authentic Archive Data" (neerleggingen van
+#   vóór april 2022 — de referentielijst toont ze, maar hun data komt uit
+#   deze aparte archief-service)
 # - NBB_CBSO_EXTRACT_KEY: product "Extracts" (Authentic Data Daily Extract —
 #   de dagelijkse stroom nieuwe neerleggingen); valt terug op de eerste key
 NBB_CBSO_SUBSCRIPTION_KEY = _env("NBB_CBSO_SUBSCRIPTION_KEY")
+NBB_CBSO_ARCHIVE_KEY = _env("NBB_CBSO_ARCHIVE_KEY")
 NBB_CBSO_EXTRACT_KEY = _env("NBB_CBSO_EXTRACT_KEY") or NBB_CBSO_SUBSCRIPTION_KEY
 NBB_CBSO_BASE_URL = _env("NBB_CBSO_BASE_URL", "https://ws.cbso.nbb.be/authentic")
+NBB_CBSO_ARCHIVE_URL = _env(
+    "NBB_CBSO_ARCHIVE_URL", "https://ws.cbso.nbb.be/authentic-archive"
+)
 
 ANTHROPIC_API_KEY = _env("ANTHROPIC_API_KEY")
 

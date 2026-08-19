@@ -81,7 +81,9 @@ def _error_reason(err: str) -> str:
 
     m = re.search(r"— bv\. [^:]+: (.+)$", err)
     reason = m.group(1) if m else err
+    reason = re.sub(r"/deposit/[^/]+/", "/deposit/…/", reason)   # referenties
     reason = re.sub(r"[0-9a-fA-F-]{8,}", "…", reason)   # request-ids e.d.
+    reason = re.sub(r"\d{1,2}:\d{2}(:\d{2})?", "…", reason)   # tijdstempels
     return " ".join(reason.split())[:180]
 
 

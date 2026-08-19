@@ -17,7 +17,13 @@ from pathlib import Path
 import httpx
 from sqlalchemy.orm import Session
 
-from ..config import DOCUMENT_STORE, NBB_CBSO_BASE_URL, NBB_CBSO_SUBSCRIPTION_KEY
+from ..config import (
+    DOCUMENT_STORE,
+    NBB_CBSO_ARCHIVE_KEY,
+    NBB_CBSO_ARCHIVE_URL,
+    NBB_CBSO_BASE_URL,
+    NBB_CBSO_SUBSCRIPTION_KEY,
+)
 from ..models import NbbDeposit
 
 log = logging.getLogger(__name__)
@@ -27,14 +33,15 @@ class CbsoError(Exception):
     pass
 
 
-def _headers(accept: str = "application/json") -> dict:
-    if not NBB_CBSO_SUBSCRIPTION_KEY:
+def _headers(accept: str = "application/json", key: str | None = None) -> dict:
+    key = key or NBB_CBSO_SUBSCRIPTION_KEY
+    if not key:
         raise CbsoError(
             "NBB_CBSO_SUBSCRIPTION_KEY ontbreekt in .env — maak een subscription key "
             "aan op het CBSO-portaal van de NBB."
         )
     return {
-        "NBB-CBSO-Subscription-Key": NBB_CBSO_SUBSCRIPTION_KEY,
+        "NBB-CBSO-Subscription-Key": key,
         "X-Request-Id": str(uuid.uuid4()),
         "Accept": accept,
     }
@@ -59,19 +66,49 @@ def get_references(enterprise_number: str) -> list[dict]:
     return data or []
 
 
-def get_accounting_data(reference: str) -> dict | bytes:
-    """Jaarrekeninggegevens voor één referentie (JSON indien beschikbaar, anders PDF)."""
-    url = f"{NBB_CBSO_BASE_URL}/deposit/{reference}/accountingData"
+def _get_accounting_from(base_url: str, key: str | None,
+                         reference: str) -> dict | bytes:
+    url = f"{base_url}/deposit/{reference}/accountingData"
     with httpx.Client(timeout=120) as client:
-        resp = client.get(url, headers=_headers("application/x.jsonxbrl"))
+        resp = client.get(url, headers=_headers("application/x.jsonxbrl", key))
         if resp.status_code == 406:
             # geen gestructureerde data — probeer PDF
-            resp = client.get(url, headers=_headers("application/pdf"))
+            resp = client.get(url, headers=_headers("application/pdf", key))
         resp.raise_for_status()
         content_type = resp.headers.get("content-type", "")
         if "json" in content_type:
             return resp.json()
-        return resp.content
+        if "pdf" in content_type or "octet-stream" in content_type:
+            return resp.content
+        raise CbsoError(
+            f"onverwacht antwoordformaat van de NBB voor {reference}: "
+            f"content-type {content_type or '?'}"
+        )
+
+
+def get_accounting_data(reference: str) -> dict | bytes:
+    """Jaarrekeninggegevens voor één referentie (JSON indien beschikbaar,
+    anders PDF).
+
+    Neerleggingen van vóór april 2022 zitten niet in de gewone
+    Authentic-Data-service (die geeft er HTTP 404 op) maar in de aparte
+    archief-service — daarvoor proberen we automatisch de archief-key.
+    """
+    try:
+        return _get_accounting_from(NBB_CBSO_BASE_URL,
+                                    NBB_CBSO_SUBSCRIPTION_KEY, reference)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 404:
+            raise
+        if not NBB_CBSO_ARCHIVE_KEY:
+            raise CbsoError(
+                "neerlegging niet in Authentic Data (waarschijnlijk van vóór "
+                "april 2022, dus in het CBSO-archief) — stel "
+                "NBB_CBSO_ARCHIVE_KEY in met je 'Authentic Archive Data'-key "
+                "om ze op te halen"
+            ) from exc
+        return _get_accounting_from(NBB_CBSO_ARCHIVE_URL,
+                                    NBB_CBSO_ARCHIVE_KEY, reference)
 
 
 def fetch_pdf(deposit) -> Path:
@@ -84,9 +121,16 @@ def fetch_pdf(deposit) -> Path:
     if target.exists():
         return target
 
-    url = f"{NBB_CBSO_BASE_URL}/deposit/{deposit.reference}/accountingData"
+    sources = [(NBB_CBSO_BASE_URL, NBB_CBSO_SUBSCRIPTION_KEY)]
+    if NBB_CBSO_ARCHIVE_KEY:
+        sources.append((NBB_CBSO_ARCHIVE_URL, NBB_CBSO_ARCHIVE_KEY))
     with httpx.Client(timeout=120) as client:
-        resp = client.get(url, headers=_headers("application/pdf"))
+        resp = None
+        for base_url, key in sources:
+            url = f"{base_url}/deposit/{deposit.reference}/accountingData"
+            resp = client.get(url, headers=_headers("application/pdf", key))
+            if resp.status_code != 404:   # 404 = mogelijk archief → volgende
+                break
         resp.raise_for_status()
         content_type = resp.headers.get("content-type", "")
         if "pdf" not in content_type:
@@ -190,6 +234,9 @@ def verify_and_repair(db: Session, enterprise_number: str) -> dict:
                     (reference, f"HTTP {status}" + (f" — {body}" if body else ""))
                 )
                 break
+            except CbsoError as exc:
+                result["failed"].append((reference, str(exc)))
+                break
             except httpx.HTTPError as exc:
                 result["failed"].append((reference, f"{type(exc).__name__}: {exc}"))
                 break
@@ -247,7 +294,7 @@ def fetch_and_store(db: Session, enterprise_number: str) -> list[NbbDeposit]:
             continue
         try:
             data = get_accounting_data(reference)
-        except httpx.HTTPStatusError as exc:
+        except (httpx.HTTPStatusError, CbsoError) as exc:
             log.warning("Referentie %s niet opgehaald: %s", reference, exc)
             continue
 
