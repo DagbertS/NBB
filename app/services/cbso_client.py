@@ -451,8 +451,10 @@ def verify_and_repair(db: Session, enterprise_number: str) -> dict:
                 break
             except httpx.HTTPStatusError as exc:
                 status = exc.response.status_code
-                if status == 429 and attempt == 1:
-                    time.sleep(30)   # NBB-tempolimiet: even wachten en opnieuw
+                if status in (429, 500, 502, 503, 504) and attempt == 1:
+                    # tempolimiet of tijdelijke NBB-storing:
+                    # even wachten en opnieuw
+                    time.sleep(30 if status == 429 else 10)
                     continue
                 body = _extract_error_detail(exc.response)
                 result["failed"].append(

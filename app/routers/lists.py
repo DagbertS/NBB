@@ -193,8 +193,10 @@ def _verify_list_nbb(list_id: int) -> None:
                     result = verify_and_repair(db, item.enterprise_number)
                 except httpx.HTTPStatusError as exc:
                     status = exc.response.status_code
-                    if status == 429 and attempt == 1:
-                        time.sleep(30)   # NBB-tempolimiet: wachten en opnieuw
+                    if status in (429, 500, 502, 503, 504) and attempt == 1:
+                        # tempolimiet of tijdelijke NBB-storing:
+                        # even wachten en opnieuw
+                        time.sleep(30 if status == 429 else 10)
                         continue
                     item.nbb_status = "error"
                     item.nbb_error = f"HTTP {status} van de NBB bij de referentielijst"
@@ -281,8 +283,10 @@ def _fetch_list_from_nbb(list_id: int) -> None:
                     break
                 except httpx.HTTPStatusError as exc:
                     status = exc.response.status_code
-                    if status == 429 and attempt == 1:
-                        time.sleep(30)   # NBB-tempolimiet: even wachten en opnieuw
+                    if status in (429, 500, 502, 503, 504) and attempt == 1:
+                        # tempolimiet of tijdelijke NBB-storing:
+                        # even wachten en opnieuw
+                        time.sleep(30 if status == 429 else 10)
                         continue
                     body = " ".join(exc.response.text[:200].split())
                     item.nbb_status = "error"
