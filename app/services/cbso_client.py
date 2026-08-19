@@ -233,8 +233,12 @@ def _get_accounting_from(base_url: str, key: str | None,
     url = f"{base_url}/deposit/{reference}/accountingData"
     with httpx.Client(timeout=120) as client:
         resp = client.get(url, headers=_headers("application/x.jsonxbrl", key))
-        if resp.status_code == 406:
-            # geen gestructureerde data — probeer PDF
+        if resp.status_code in (406, 404):
+            # geen gestructureerde data — probeer PDF. Oude neerleggingen
+            # (vóór het CBSO-platform van april 2022) antwoorden op de
+            # JSON-vraag zelfs 404 ("Reference Number not found") maar
+            # bestaan wél als PDF-beeld — live vastgesteld 2026-08-19 op
+            # referentie 2017-05200202.
             resp = client.get(url, headers=_headers("application/pdf", key))
         resp.raise_for_status()
         content_type = resp.headers.get("content-type", "")
