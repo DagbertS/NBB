@@ -40,6 +40,7 @@ de screening-pipeline en de individuele screenings.</p>
     </li>
     <li>NBB CBSO — archief, neerleggingen vóór april 2022 ("Authentic Archive Data"):
       {% if has_archive_key %}<span class="badge ok">key ingesteld</span>
+      <span class="muted">adres: <code>{{ archive_url }}</code></span>
       {% else %}<span class="badge err">geen key — stel NBB_CBSO_ARCHIVE_KEY in; zonder deze key blijven oudere jaarrekeningen onbereikbaar</span>{% endif %}
     </li>
     <li>NBB CBSO — daily extract ("Extracts"):
@@ -52,6 +53,33 @@ de screening-pipeline en de individuele screenings.</p>
     </li>
   </ul>
   <p class="muted">Datamap: <code>{{ status.data_root }}</code></p>
+
+  {% if user.role == 'admin' and has_archive_key %}
+  <form method="post" action="/screening/data/test-archive" style="margin-top:0.6rem"
+        onsubmit="return confirm('Kandidaat-adressen voor de archief-service testen op een echte archief-referentie? Dit duurt enkele seconden.')">
+    <button type="submit" class="btn-secondary">Test archief-verbinding</button>
+  </form>
+  <p class="muted" style="margin-top:0.3rem">
+    Probeert de mogelijke adressen van de "Authentic Archive Data"-service op een
+    neerlegging van vóór april 2022 en onthoudt automatisch het adres dat werkt.
+  </p>
+  {% endif %}
+
+  {% if archive_probe %}
+  <h3 style="margin-top:0.8rem">Laatste archief-verbindingstest</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Adres</th><th>Antwoord</th><th>Details</th></tr>
+    {% for r in archive_probe %}
+    <tr>
+      <td><code>{{ r.label }}</code></td>
+      <td>{% if r.works %}<span class="badge ok">werkt (HTTP {{ r.status }})</span>
+          {% elif r.status %}<span class="badge err">HTTP {{ r.status }}</span>
+          {% else %}<span class="badge err">geen verbinding</span>{% endif %}</td>
+      <td>{{ r.content_type }} {{ r.snippet }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
 </div>
 
 {% if user.role == 'admin' %}

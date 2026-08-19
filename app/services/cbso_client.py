@@ -66,6 +66,127 @@ def get_references(enterprise_number: str) -> list[dict]:
     return data or []
 
 
+# Kandidaat-adressen voor de archief-service ("Authentic Archive Data").
+# Het juiste pad staat niet in openbaar bereikbare documentatie; de knop
+# "Test archief-verbinding" probeert ze op een echte archief-referentie en
+# onthoudt wat werkt (setting cbso_archive_url wint dan van de env-variabele).
+ARCHIVE_URL_CANDIDATES = [
+    "https://ws.cbso.nbb.be/authentic-archive",
+    "https://ws.cbso.nbb.be/archive",
+    "https://ws.cbso.nbb.be/archives",
+    "https://ws.cbso.nbb.be/authentic/archive",
+    "https://ws.cbso.nbb.be/authentic-archive-data",
+]
+
+ARCHIVE_URL_SETTING = "cbso_archive_url"
+
+
+def _archive_base_url() -> str:
+    """Basisadres van de archief-service: een door de verbindingstest
+    gevonden adres wint van de omgevingsvariabele."""
+    import sqlite3
+
+    from ..config import DATABASE_PATH
+
+    try:
+        with sqlite3.connect(DATABASE_PATH, timeout=10) as conn:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = ?", (ARCHIVE_URL_SETTING,)
+            ).fetchone()
+        if row and row[0]:
+            return row[0]
+    except sqlite3.OperationalError:
+        pass
+    return NBB_CBSO_ARCHIVE_URL
+
+
+def save_archive_url(base_url: str) -> None:
+    import sqlite3
+
+    from ..config import DATABASE_PATH
+
+    with sqlite3.connect(DATABASE_PATH, timeout=30) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT DEFAULT '')"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (ARCHIVE_URL_SETTING, base_url),
+        )
+        conn.commit()
+
+
+def find_archived_reference(db: Session) -> tuple[str, str]:
+    """Zoek een echte archief-referentie (neergelegd vóór april 2022) om de
+    verbindingstest op te draaien. Kijkt bij bedrijven met een resterende
+    fout en geeft (ondernemingsnummer, referentie) terug."""
+    from ..models import CompanyListItem
+
+    items = (
+        db.query(CompanyListItem)
+        .filter(CompanyListItem.nbb_error != "")
+        .limit(25)
+        .all()
+    )
+    for item in items:
+        num = _normalize_number(item.enterprise_number)
+        try:
+            references = get_references(num)
+        except httpx.HTTPError:
+            continue
+        for ref in references:
+            reference = str(ref.get("ReferenceNumber") or ref.get("reference")
+                            or ref.get("id") or "")
+            deposit_date, _, _ = _ref_fields(ref)
+            if reference and deposit_date[:7] and deposit_date[:7] < "2022-04":
+                return num, reference
+    raise CbsoError(
+        "geen archief-referentie gevonden om mee te testen — geen bedrijf "
+        "met een resterende fout heeft een neerlegging van vóór april 2022"
+    )
+
+
+def probe_archive_candidates(reference: str) -> list[dict]:
+    """Probeer alle kandidaat-adressen van de archief-service op één
+    archief-referentie en rapporteer letterlijk wat elk adres antwoordt."""
+    if not NBB_CBSO_ARCHIVE_KEY:
+        raise CbsoError("NBB_CBSO_ARCHIVE_KEY ontbreekt — zonder key valt er "
+                        "niets te testen")
+    candidates: list[tuple[str, str, str]] = []   # (label, base, key)
+    seen = set()
+    for base in [_archive_base_url(), *ARCHIVE_URL_CANDIDATES]:
+        if base not in seen:
+            seen.add(base)
+            candidates.append((base, base, NBB_CBSO_ARCHIVE_KEY))
+    # misschien is het pad gewoon dat van de hoofdservice, met de archief-key
+    candidates.append((f"{NBB_CBSO_BASE_URL} (met archief-key)",
+                       NBB_CBSO_BASE_URL, NBB_CBSO_ARCHIVE_KEY))
+
+    results = []
+    with httpx.Client(timeout=30) as client:
+        for label, base, key in candidates:
+            url = f"{base}/deposit/{reference}/accountingData"
+            try:
+                resp = client.get(url,
+                                  headers=_headers("application/x.jsonxbrl", key))
+                snippet = "" if resp.status_code == 200 \
+                    else " ".join(resp.text[:120].split())
+                results.append({
+                    "label": label, "base": base, "status": resp.status_code,
+                    "content_type": resp.headers.get("content-type", ""),
+                    "snippet": snippet,
+                    # 200 = data; 406 = bestaat, maar ander formaat (bv. enkel
+                    # PDF) — beide bewijzen dat het adres klopt
+                    "works": resp.status_code in (200, 406),
+                })
+            except httpx.HTTPError as exc:
+                results.append({"label": label, "base": base, "status": None,
+                                "content_type": "",
+                                "snippet": f"{type(exc).__name__}: {exc}",
+                                "works": False})
+    return results
+
+
 def _get_accounting_from(base_url: str, key: str | None,
                          reference: str) -> dict | bytes:
     url = f"{base_url}/deposit/{reference}/accountingData"
@@ -107,8 +228,18 @@ def get_accounting_data(reference: str) -> dict | bytes:
                 "NBB_CBSO_ARCHIVE_KEY in met je 'Authentic Archive Data'-key "
                 "om ze op te halen"
             ) from exc
-        return _get_accounting_from(NBB_CBSO_ARCHIVE_URL,
-                                    NBB_CBSO_ARCHIVE_KEY, reference)
+        archive_base = _archive_base_url()
+        try:
+            return _get_accounting_from(archive_base, NBB_CBSO_ARCHIVE_KEY,
+                                        reference)
+        except httpx.HTTPStatusError as arch_exc:
+            if arch_exc.response.status_code == 404:
+                raise CbsoError(
+                    f"ook de archief-service ({archive_base}) antwoordt 404 — "
+                    "draai 'Test archief-verbinding' op de pagina Data & "
+                    "integraties om het juiste adres te vinden"
+                ) from arch_exc
+            raise
 
 
 def fetch_pdf(deposit) -> Path:
@@ -123,7 +254,7 @@ def fetch_pdf(deposit) -> Path:
 
     sources = [(NBB_CBSO_BASE_URL, NBB_CBSO_SUBSCRIPTION_KEY)]
     if NBB_CBSO_ARCHIVE_KEY:
-        sources.append((NBB_CBSO_ARCHIVE_URL, NBB_CBSO_ARCHIVE_KEY))
+        sources.append((_archive_base_url(), NBB_CBSO_ARCHIVE_KEY))
     with httpx.Client(timeout=120) as client:
         resp = None
         for base_url, key in sources:

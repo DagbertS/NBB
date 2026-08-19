@@ -13,7 +13,7 @@ from ..audit import log_action
 from ..database import get_db
 from ..models import User
 from ..security import get_current_user, require_admin
-from ..services import screening
+from ..services import cbso_client, screening
 from ..templating import templates
 
 router = APIRouter(prefix="/screening")
@@ -95,9 +95,64 @@ def _data_context(request: Request, user: User, db: Session,
         "has_archive_key": bool(app_config.NBB_CBSO_ARCHIVE_KEY),
         "has_extract_key": bool(app_config.NBB_CBSO_EXTRACT_KEY),
         "has_kbo_login": bool(app_config.KBO_USERNAME and app_config.KBO_PASSWORD),
+        "archive_url": cbso_client._archive_base_url(),
+        "archive_probe": _load_archive_probe(db),
         "error": error,
         "notice": notice,
     }
+
+
+def _load_archive_probe(db: Session) -> list:
+    import json
+
+    from ..models import Setting
+
+    raw = (db.get(Setting, "cbso_archive_probe") or Setting(value="")).value
+    try:
+        return json.loads(raw) if raw else []
+    except json.JSONDecodeError:
+        return []
+
+
+@router.post("/data/test-archive")
+def test_archive(
+    request: Request,
+    user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Zoek het juiste adres van de CBSO-archief-service: probeer alle
+    kandidaten op een echte archief-referentie en onthoud wat werkt."""
+    import json
+
+    from ..models import Setting
+
+    error = notice = ""
+    try:
+        num, reference = cbso_client.find_archived_reference(db)
+        results = cbso_client.probe_archive_candidates(reference)
+        setting = db.get(Setting, "cbso_archive_probe") or Setting(key="cbso_archive_probe")
+        setting.value = json.dumps(results, ensure_ascii=False)
+        db.merge(setting)
+        db.commit()
+        working = [r for r in results if r["works"]]
+        if working:
+            cbso_client.save_archive_url(working[0]["base"])
+            notice = (f"archief-adres gevonden en bewaard: {working[0]['base']} "
+                      f"(getest op referentie {reference}) — draai nu opnieuw "
+                      "'Controleer & vul aan (delta)' op je lijsten")
+        else:
+            error = (f"geen van de kandidaat-adressen werkt (getest op "
+                     f"referentie {reference} van {num}) — zie de tabel voor "
+                     "wat elk adres antwoordde")
+    except cbso_client.CbsoError as exc:
+        error = str(exc)
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+    log_action(db, user.id, "cbso_archive_probe", notice or error)
+    return templates.TemplateResponse(
+        request, "screening_data.html",
+        _data_context(request, user, db, error=error, notice=notice),
+    )
 
 
 @router.get("/data")
