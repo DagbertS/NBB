@@ -173,31 +173,56 @@ def probe_archive_candidates(reference: str) -> list[dict]:
     # misschien is het pad gewoon dat van de hoofdservice, met de archief-key
     candidates.append((f"{NBB_CBSO_BASE_URL} (met archief-key)",
                        NBB_CBSO_BASE_URL, NBB_CBSO_ARCHIVE_KEY))
-    # en de hoofdservice met de gewone key: het vólledige antwoord (incl. de
+    # (label, url, key, accept, kind) — kind bepaalt wat een succes betekent:
+    # 'archive-base' → dit basisadres bewaren; 'operation' → deze operatie
+    # wordt automatisch gebruikt bij het ophalen
+    probes: list[tuple[str, str, str, str, str]] = [
+        (label, f"{base}/deposit/{reference}/accountingData", key,
+         "application/x.jsonxbrl", "archive-base")
+        for label, base, key in candidates
+    ]
+    # de hoofdservice met de gewone key: het vólledige antwoord (incl. de
     # validatie-boodschap) vertelt waaróm een oude referentie daar 404 geeft
-    candidates.append((f"{NBB_CBSO_BASE_URL} (met hoofd-key)",
-                       NBB_CBSO_BASE_URL, NBB_CBSO_SUBSCRIPTION_KEY))
+    probes.append((f"{NBB_CBSO_BASE_URL} (met hoofd-key)",
+                   f"{NBB_CBSO_BASE_URL}/deposit/{reference}/accountingData",
+                   NBB_CBSO_SUBSCRIPTION_KEY, "application/x.jsonxbrl",
+                   "diagnostic"))
+    # de technische gids noemt naast accountingData een aparte operatie
+    # "PDF representation" — oude neerleggingen (PDF-beelden sinds 1999)
+    # bestaan mogelijk alléén daar
+    probes += [
+        (f"{NBB_CBSO_BASE_URL}/deposit/…/pdf (met hoofd-key)",
+         f"{NBB_CBSO_BASE_URL}/deposit/{reference}/pdf",
+         NBB_CBSO_SUBSCRIPTION_KEY, "application/pdf", "operation"),
+        (f"{NBB_CBSO_BASE_URL}/deposit/…/document (met hoofd-key)",
+         f"{NBB_CBSO_BASE_URL}/deposit/{reference}/document",
+         NBB_CBSO_SUBSCRIPTION_KEY, "application/pdf", "operation"),
+        (f"{NBB_CBSO_BASE_URL}/deposit/…/accountingData met Accept: "
+         "application/pdf (met hoofd-key)",
+         f"{NBB_CBSO_BASE_URL}/deposit/{reference}/accountingData",
+         NBB_CBSO_SUBSCRIPTION_KEY, "application/pdf", "operation"),
+    ]
 
     results = []
     with httpx.Client(timeout=30) as client:
-        for label, base, key in candidates:
-            url = f"{base}/deposit/{reference}/accountingData"
+        for label, url, key, accept, kind in probes:
+            base = url.split("/deposit/")[0]
             try:
-                resp = client.get(url,
-                                  headers=_headers("application/x.jsonxbrl", key))
+                resp = client.get(url, headers=_headers(accept, key))
+                content_type = resp.headers.get("content-type", "")
                 snippet = "" if resp.status_code == 200 \
                     else " ".join(resp.text[:400].split())
                 results.append({
-                    "label": label, "base": base, "status": resp.status_code,
-                    "content_type": resp.headers.get("content-type", ""),
+                    "label": label, "base": base, "kind": kind,
+                    "status": resp.status_code, "content_type": content_type,
                     "snippet": snippet,
                     # 200 = data; 406 = bestaat, maar ander formaat (bv. enkel
                     # PDF) — beide bewijzen dat het adres klopt
                     "works": resp.status_code in (200, 406),
                 })
             except httpx.HTTPError as exc:
-                results.append({"label": label, "base": base, "status": None,
-                                "content_type": "",
+                results.append({"label": label, "base": base, "kind": kind,
+                                "status": None, "content_type": "",
                                 "snippet": f"{type(exc).__name__}: {exc}",
                                 "works": False})
     return results
@@ -223,13 +248,34 @@ def _get_accounting_from(base_url: str, key: str | None,
         )
 
 
+def _get_pdf_operation(base_url: str, key: str | None,
+                       reference: str) -> bytes:
+    """Aparte 'PDF representation'-operatie uit de technische gids — oudere
+    neerleggingen (PDF-beelden sinds 1999) bestaan mogelijk alléén hier."""
+    with httpx.Client(timeout=120) as client:
+        resp = None
+        for suffix in ("pdf", "document"):
+            url = f"{base_url}/deposit/{reference}/{suffix}"
+            resp = client.get(url, headers=_headers("application/pdf", key))
+            if resp.status_code == 200:
+                break
+        resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if "pdf" not in content_type and "octet-stream" not in content_type:
+            raise CbsoError(
+                f"pdf-operatie gaf geen PDF voor {reference} "
+                f"(content-type: {content_type or '?'})"
+            )
+        return resp.content
+
+
 def get_accounting_data(reference: str) -> dict | bytes:
     """Jaarrekeninggegevens voor één referentie (JSON indien beschikbaar,
     anders PDF).
 
-    Neerleggingen van vóór april 2022 zitten niet in de gewone
-    Authentic-Data-service (die geeft er HTTP 404 op) maar in de aparte
-    archief-service — daarvoor proberen we automatisch de archief-key.
+    Oudere neerleggingen geven op accountingData een HTTP 404; daarvoor
+    proberen we achtereenvolgens de aparte PDF-operatie van dezelfde service
+    en (als er een archief-key is) de archief-service.
     """
     try:
         return _get_accounting_from(NBB_CBSO_BASE_URL,
@@ -237,25 +283,28 @@ def get_accounting_data(reference: str) -> dict | bytes:
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code != 404:
             raise
-        if not NBB_CBSO_ARCHIVE_KEY:
-            raise CbsoError(
-                "neerlegging niet in Authentic Data (waarschijnlijk van vóór "
-                "april 2022, dus in het CBSO-archief) — stel "
-                "NBB_CBSO_ARCHIVE_KEY in met je 'Authentic Archive Data'-key "
-                "om ze op te halen"
-            ) from exc
-        archive_base = _archive_base_url()
+        detail = " ".join(exc.response.text[:300].split())
+
         try:
-            return _get_accounting_from(archive_base, NBB_CBSO_ARCHIVE_KEY,
-                                        reference)
-        except httpx.HTTPStatusError as arch_exc:
-            if arch_exc.response.status_code == 404:
-                raise CbsoError(
-                    f"ook de archief-service ({archive_base}) antwoordt 404 — "
-                    "draai 'Test archief-verbinding' op de pagina Data & "
-                    "integraties om het juiste adres te vinden"
-                ) from arch_exc
-            raise
+            return _get_pdf_operation(NBB_CBSO_BASE_URL,
+                                      NBB_CBSO_SUBSCRIPTION_KEY, reference)
+        except (httpx.HTTPError, CbsoError):
+            pass
+
+        if NBB_CBSO_ARCHIVE_KEY:
+            try:
+                return _get_accounting_from(_archive_base_url(),
+                                            NBB_CBSO_ARCHIVE_KEY, reference)
+            except (httpx.HTTPError, CbsoError):
+                pass
+
+        raise CbsoError(
+            "niet ophaalbaar: accountingData gaf HTTP 404 "
+            f"({detail or 'zonder detail'}); ook de pdf-operatie en de "
+            "archief-service gaven geen document — draai 'Test "
+            "archief-verbinding' op de pagina Data & integraties voor de "
+            "volledige diagnose"
+        ) from exc
 
 
 def fetch_pdf(deposit) -> Path:
@@ -268,15 +317,20 @@ def fetch_pdf(deposit) -> Path:
     if target.exists():
         return target
 
-    sources = [(NBB_CBSO_BASE_URL, NBB_CBSO_SUBSCRIPTION_KEY)]
+    ref = deposit.reference
+    urls = [
+        (f"{NBB_CBSO_BASE_URL}/deposit/{ref}/accountingData",
+         NBB_CBSO_SUBSCRIPTION_KEY),
+        (f"{NBB_CBSO_BASE_URL}/deposit/{ref}/pdf", NBB_CBSO_SUBSCRIPTION_KEY),
+    ]
     if NBB_CBSO_ARCHIVE_KEY:
-        sources.append((_archive_base_url(), NBB_CBSO_ARCHIVE_KEY))
+        urls.append((f"{_archive_base_url()}/deposit/{ref}/accountingData",
+                     NBB_CBSO_ARCHIVE_KEY))
     with httpx.Client(timeout=120) as client:
         resp = None
-        for base_url, key in sources:
-            url = f"{base_url}/deposit/{deposit.reference}/accountingData"
+        for url, key in urls:
             resp = client.get(url, headers=_headers("application/pdf", key))
-            if resp.status_code != 404:   # 404 = mogelijk archief → volgende
+            if resp.status_code == 200:
                 break
         resp.raise_for_status()
         content_type = resp.headers.get("content-type", "")

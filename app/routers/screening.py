@@ -141,16 +141,26 @@ def test_archive(
             ensure_ascii=False)
         db.merge(setting)
         db.commit()
-        working = [r for r in results if r["works"]]
-        if working:
-            cbso_client.save_archive_url(working[0]["base"])
-            notice = (f"archief-adres gevonden en bewaard: {working[0]['base']} "
-                      f"(getest op referentie {reference}) — draai nu opnieuw "
-                      "'Controleer & vul aan (delta)' op je lijsten")
+        working_base = [r for r in results
+                        if r["works"] and r.get("kind") == "archive-base"]
+        working_op = [r for r in results
+                      if r["works"] and r.get("kind") == "operation"]
+        if working_base:
+            cbso_client.save_archive_url(working_base[0]["base"])
+            notice = (f"archief-adres gevonden en bewaard: "
+                      f"{working_base[0]['base']} (getest op referentie "
+                      f"{reference}) — draai nu opnieuw 'Controleer & vul "
+                      "aan (delta)' op je lijsten")
+        elif working_op:
+            notice = (f"oude neerleggingen blijken bereikbaar via "
+                      f"{working_op[0]['label']} (getest op referentie "
+                      f"{reference}) — de app gebruikt deze route voortaan "
+                      "automatisch; draai nu opnieuw 'Controleer & vul aan "
+                      "(delta)' op je lijsten")
         else:
-            error = (f"geen van de kandidaat-adressen werkt (getest op "
-                     f"referentie {reference} van {num}) — zie de tabel voor "
-                     "wat elk adres antwoordde")
+            error = (f"geen van de kandidaten werkt (getest op referentie "
+                     f"{reference} van {num}) — zie de tabel voor wat elk "
+                     "adres antwoordde")
     except cbso_client.CbsoError as exc:
         error = str(exc)
     except Exception as exc:
