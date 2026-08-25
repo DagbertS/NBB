@@ -35,15 +35,64 @@
   </table></div>
   {% endif %}
 
+  <form method="get" action="/lists/{{ l.id }}"
+        style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:end; margin-top:0.8rem">
+    <div>
+      <label>VTE</label>
+      <span style="white-space:nowrap">
+        <select name="vte_op" style="width:auto">
+          {% for op in operators %}
+          <option value="{{ op }}" {% if filters.vte_op == op %}selected{% endif %}>{{ op }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="vte" value="{{ '%g' % filters.vte if filters.vte is not none else '' }}"
+               placeholder="bv. 10" style="width:6rem">
+      </span>
+    </div>
+    <div>
+      <label>EBITDA (proxy, €)</label>
+      <span style="white-space:nowrap">
+        <select name="ebitda_op" style="width:auto">
+          {% for op in operators %}
+          <option value="{{ op }}" {% if filters.ebitda_op == op %}selected{% endif %}>{{ op }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="ebitda" value="{{ '%g' % filters.ebitda if filters.ebitda is not none else '' }}"
+               placeholder="bv. 250.000" style="width:8rem">
+      </span>
+    </div>
+    <div>
+      <label>Provincie</label>
+      <select name="province" style="width:auto">
+        <option value="">alle</option>
+        {% for p in provinces %}
+        <option value="{{ p }}" {% if filters.province == p %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn-small">Filter</button>
+    {% if filters.active %}<a class="btn btn-small btn-secondary" href="/lists/{{ l.id }}">Wis</a>{% endif %}
+  </form>
+  <p class="muted" style="margin-top:0.3rem">
+    {% if filters.active %}{{ items | length }} van {{ total_items }} bedrijven voldoen aan de filters.{% endif %}
+    VTE en EBITDA (proxy) komen uit het meest recente machinaal geparste
+    boekjaar; "—" = geen cijfer beschikbaar (valt bij een actieve
+    cijferfilter buiten de selectie).
+  </p>
+
   <div class="table-wrap"><table>
-    <tr><th>Nummer</th><th>Naam</th><th>NACE</th><th>Postcode</th><th>Gemeente</th><th>NBB-documenten</th></tr>
-    {% for item in l.items %}
+    <tr><th>Nummer</th><th>Naam</th><th>NACE</th><th>Postcode</th><th>Gemeente</th>
+        <th>VTE</th><th>EBITDA (proxy)</th><th>NBB-documenten</th></tr>
+    {% for item in items %}
+    {% set f = facts.get(norm(item.enterprise_number), {}) %}
     <tr>
       <td><a href="/companies/{{ item.enterprise_number }}">{{ item.enterprise_number }}</a></td>
       <td>{{ item.name or "—" }}</td>
       <td>{{ item.nace_code or "—" }}</td>
       <td>{{ item.zipcode or "—" }}</td>
       <td>{{ item.municipality or "—" }}</td>
+      <td>{{ fmt_fte(f.get("fte")) }}</td>
+      <td>{{ fmt_eur(f.get("ebitda")) }}</td>
       <td>
         {% set n = nbb_counts.get(item.id, 0) %}
         {% if n %}

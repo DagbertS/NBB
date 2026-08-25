@@ -16,20 +16,68 @@ herlaad deze pagina; het resultaat verschijnt hieronder zodra het klaar is.</p>
 {% endif %}
 
 <div class="card">
-  <form method="get" action="/analyses" style="display:flex; gap:0.5rem; flex-wrap:wrap">
-    <input type="text" name="q" value="{{ q }}" placeholder="zoek op naam of nummer"
-           style="max-width:300px">
-    <button class="btn-small">Zoek</button>
+  <form method="get" action="/analyses"
+        style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:end">
+    <div>
+      <label>Zoek</label>
+      <input type="text" name="q" value="{{ q }}" placeholder="naam of nummer"
+             style="max-width:220px">
+    </div>
+    <div>
+      <label>VTE</label>
+      <span style="white-space:nowrap">
+        <select name="vte_op" style="width:auto">
+          {% for op in operators %}
+          <option value="{{ op }}" {% if filters.vte_op == op %}selected{% endif %}>{{ op }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="vte" value="{{ '%g' % filters.vte if filters.vte is not none else '' }}"
+               placeholder="bv. 10" style="width:6rem">
+      </span>
+    </div>
+    <div>
+      <label>EBITDA (proxy, €)</label>
+      <span style="white-space:nowrap">
+        <select name="ebitda_op" style="width:auto">
+          {% for op in operators %}
+          <option value="{{ op }}" {% if filters.ebitda_op == op %}selected{% endif %}>{{ op }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="ebitda" value="{{ '%g' % filters.ebitda if filters.ebitda is not none else '' }}"
+               placeholder="bv. 250.000" style="width:8rem">
+      </span>
+    </div>
+    <div>
+      <label>Provincie</label>
+      <select name="province" style="width:auto">
+        <option value="">alle</option>
+        {% for p in provinces %}
+        <option value="{{ p }}" {% if filters.province == p %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn-small">Filter</button>
+    {% if filters.active or q %}<a class="btn btn-small btn-secondary" href="/analyses">Wis</a>{% endif %}
   </form>
+  <p class="muted" style="margin-top:0.3rem">
+    VTE en EBITDA (proxy) komen uit het meest recente machinaal geparste
+    boekjaar; "—" betekent: geen cijfer beschikbaar (zo'n bedrijf valt bij
+    een actieve cijferfilter buiten de selectie).
+  </p>
 
   {% if entries %}
   <div class="table-wrap" style="margin-top:0.8rem"><table>
-    <tr><th>Datum</th><th>Bedrijf</th><th>Nummer</th><th>Type</th><th>Door</th><th></th></tr>
+    <tr><th>Datum</th><th>Bedrijf</th><th>Nummer</th><th>VTE</th>
+        <th>EBITDA (proxy)</th><th>Provincie</th><th>Type</th><th>Door</th><th></th></tr>
     {% for a in entries %}
+    {% set f = facts.get(norm(a.enterprise_number), {}) %}
     <tr>
       <td>{{ a.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
       <td><a href="/analyses/{{ a.id }}">{{ a.company_name or "—" }}</a></td>
       <td>{{ a.enterprise_number }}</td>
+      <td>{{ fmt_fte(f.get("fte")) }}</td>
+      <td>{{ fmt_eur(f.get("ebitda")) }}</td>
+      <td>{{ f.get("province") or "—" }}</td>
       <td><span class="badge">{{ a.kind }}</span></td>
       <td class="muted">{{ a.created_by.email if a.created_by else "—" }}</td>
       <td>
@@ -44,6 +92,9 @@ herlaad deze pagina; het resultaat verschijnt hieronder zodra het klaar is.</p>
     </tr>
     {% endfor %}
   </table></div>
+  {% elif filters.active or q %}
+  <p class="muted" style="margin-top:0.8rem">Geen analyses die aan de
+  filters voldoen. <a href="/analyses">Wis de filters</a> om alles te zien.</p>
   {% else %}
   <p class="muted" style="margin-top:0.8rem">Nog geen analyses bewaard. Ze
   ontstaan automatisch: open een one-pager vanuit de

@@ -22,6 +22,8 @@ def analyses_page(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    from ..services import company_filters
+
     query = db.query(Analysis)
     if q.strip():
         needle = f"%{q.strip()}%"
@@ -31,9 +33,27 @@ def analyses_page(
             | Analysis.enterprise_number.like(number_needle)
         )
     entries = query.order_by(Analysis.created_at.desc()).limit(200).all()
+
+    # filters op bedrijfskenmerken (VTE / EBITDA-proxy / provincie)
+    filters = company_filters.parse_filters(request.query_params)
+    facts = company_filters.lookup(
+        [a.enterprise_number for a in entries])
+    if filters["active"]:
+        entries = [
+            a for a in entries
+            if company_filters.matches(
+                facts.get(screening.normalize_number(a.enterprise_number)),
+                filters)
+        ]
     return templates.TemplateResponse(
         request, "analyses.html",
         {"user": user, "entries": entries, "q": q,
+         "filters": filters, "facts": facts,
+         "operators": company_filters.OPERATORS,
+         "provinces": company_filters.PROVINCES,
+         "norm": screening.normalize_number,
+         "fmt_fte": company_filters.fmt_fte,
+         "fmt_eur": company_filters.fmt_eur,
          "started": request.query_params.get("started") == "1",
          "individual_status": screening.get_individual_status()},
     )

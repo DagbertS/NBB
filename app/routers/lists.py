@@ -66,9 +66,34 @@ def list_detail(
     nbb_counts = {item.id: counts.get(_norm(item.enterprise_number), 0)
                   for item in company_list.items}
     error_summary = _error_summary(company_list.items)
+
+    # filters op bedrijfskenmerken (VTE / EBITDA-proxy / provincie)
+    from ..geo import province_for_zipcode
+    from ..services import company_filters
+
+    filters = company_filters.parse_filters(request.query_params)
+    facts = company_filters.lookup(
+        [item.enterprise_number for item in company_list.items])
+    items = company_list.items
+    if filters["active"]:
+        items = [
+            item for item in items
+            if company_filters.matches(
+                facts.get(_norm(item.enterprise_number)), filters,
+                province_override=(province_for_zipcode(item.zipcode)
+                                   if item.zipcode else ""))
+        ]
     return templates.TemplateResponse(
         request, "list_detail.html",
-        {"user": user, "l": company_list, "nbb_counts": nbb_counts,
+        {"user": user, "l": company_list, "items": items,
+         "total_items": len(company_list.items),
+         "nbb_counts": nbb_counts,
+         "filters": filters, "facts": facts,
+         "operators": company_filters.OPERATORS,
+         "provinces": company_filters.PROVINCES,
+         "norm": _norm,
+         "fmt_fte": company_filters.fmt_fte,
+         "fmt_eur": company_filters.fmt_eur,
          "check_status": _get_list_status(list_id),
          "error_summary": error_summary}
     )
